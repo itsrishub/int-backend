@@ -14,7 +14,6 @@ def get_profile(user_id: str):
 
     cursor.execute("SELECT COUNT(*) as count FROM interview_sessions WHERE user_id = %s", (user_id,))
     total_sessions = cursor.fetchone()['count']
-    conn.close()
 
     cursor.execute("SELECT AVG(score) as avg_score FROM interview_sessions WHERE user_id = %s", (user_id,))
     avg_score = cursor.fetchone()['avg_score']
