@@ -12,10 +12,7 @@ def get_profile(user_id: str):
     cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
     user = cursor.fetchone()
 
-    cursor.execute("""
-            SELECT COUNT(*) as count FROM interview_sessions 
-            WHERE user_id = %s'
-        """, (user_id,))
+    cursor.execute("SELECT COUNT(*) as count FROM interview_sessions WHERE user_id = %s", (user_id,))
     total_sessions = cursor.fetchone()['count']
     conn.close()
     
