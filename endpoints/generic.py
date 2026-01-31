@@ -9,8 +9,12 @@ router = APIRouter(prefix="/api/generic", tags=["Generic"])
 
 class StartInterviewSession(BaseModel):
     user_id: Optional[str] = None
-    interview_type: Optional[str] = None
     start_time: Optional[str] = None
+    resume_blob: Optional[str] = None
+    role: Optional[str] = None
+    company: Optional[str] = None
+    experience: Optional[int] = 0
+    job_description: Optional[str] = None
 
 
 class EndInterviewSession(BaseModel):
@@ -18,6 +22,7 @@ class EndInterviewSession(BaseModel):
     end_time: Optional[str] = None
     feedback: Optional[str] = None
     score: Optional[int] = None
+    status: Optional[str] = "closed"
 
 
 @router.get("/email/{email}")
@@ -34,6 +39,34 @@ def get_user_by_email(email: str):
     
     return dict(user)
 
+
+@router.get("/config/{user_id}")
+def get_config(user_id: str):
+    conn = get_db_connection()
+    cursor = get_db_cursor(conn)
+    
+    cursor.execute("""
+        SELECT * FROM interview_sessions 
+        WHERE user_id = %s AND status = 'active'
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (user_id,))
+    session = cursor.fetchone()
+    conn.close()
+    
+    if session is None:
+        return {
+            "success": True,
+            "has_active_session": False,
+            "session_id": None
+        }
+    
+    return {
+        "success": True,
+        "has_active_session": True,
+        "session_id": session["id"]
+    }
+
 @router.post("/start_interview_session")
 def start_interview_session(session: StartInterviewSession):
     conn = get_db_connection()
@@ -41,13 +74,18 @@ def start_interview_session(session: StartInterviewSession):
     
     try:
         cursor.execute('''
-            INSERT INTO interview_sessions (user_id, interview_type, start_time)
-            VALUES (%s, %s, %s)
+            INSERT INTO interview_sessions (user_id, start_time, status, resume_blob, role, company, experience_level, job_description)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             session.user_id,
-            session.interview_type,
-            session.start_time
+            session.start_time,
+            'active',
+            session.resume_blob,
+            session.role,
+            session.company,
+            session.experience,
+            session.job_description
         ))
         interview_session_id = cursor.fetchone()['id']
         conn.commit()
@@ -56,7 +94,7 @@ def start_interview_session(session: StartInterviewSession):
             "success": True,
             "message": "Interview session created successfully",
             "id": interview_session_id,
-            "interview_type": session.interview_type
+            "status": "active"
         }
     except Exception as e:
         conn.rollback()
@@ -95,16 +133,18 @@ def end_interview_session(session: EndInterviewSession):
             except:
                 pass
         
-        # Update the session with end_time, feedback, score, duration
+        # Update the session with end_time, feedback, score, duration, status
+        final_status = session.status if session.status in ['closed', 'terminated'] else 'closed'
         cursor.execute('''
             UPDATE interview_sessions 
-            SET end_time = %s, feedback = %s, score = %s, duration = %s
+            SET end_time = %s, feedback = %s, score = %s, duration = %s, status = %s
             WHERE id = %s
         ''', (
             end_time_str,
             session.feedback,
             session.score,
             duration,
+            final_status,
             session.interview_session_id
         ))
         conn.commit()
@@ -115,7 +155,8 @@ def end_interview_session(session: EndInterviewSession):
             "id": session.interview_session_id,
             "duration": duration,
             "feedback": session.feedback,
-            "score": session.score
+            "score": session.score,
+            "status": final_status
         }
     except HTTPException:
         raise

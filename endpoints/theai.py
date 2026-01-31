@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from database import get_db_connection, get_db_cursor
-import base64
 import json
 import os
+import io
 import google.generativeai as genai
+from PyPDF2 import PdfReader
 
 router = APIRouter(prefix="/api/theai", tags=["AI"])
 
@@ -24,6 +25,16 @@ def generate_content(prompt: str) -> str:
     return response.text
 
 
+def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extract text content from PDF bytes."""
+    pdf_file = io.BytesIO(pdf_bytes)
+    reader = PdfReader(pdf_file)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() or ""
+    return text.strip()
+
+
 @router.get("/resume/{user_id}")
 def analyze_resume(user_id: int):
     conn = get_db_connection()
@@ -40,24 +51,32 @@ def analyze_resume(user_id: int):
     resume_id = resume["id"]
     resume_blob = resume["resume_blob"]
     
-    # Convert blob to base64 for GPT (it can't read binary directly)
-    # PostgreSQL returns memoryview or bytes for BYTEA
-    if resume_blob:
-        if isinstance(resume_blob, memoryview):
-            resume_base64 = base64.b64encode(bytes(resume_blob)).decode('utf-8')
-        else:
-            resume_base64 = base64.b64encode(resume_blob).decode('utf-8')
-    else:
-        resume_base64 = None
-    
-    if not resume_base64:
+    if not resume_blob:
         conn.close()
         raise HTTPException(status_code=400, detail="Resume is empty")
     
-    # Create prompt for ATS analysis
-    prompt = f"""Analyze this resume (provided as base64 PDF) and provide an ATS (Applicant Tracking System) score and feedback.
+    # Convert memoryview to bytes if needed
+    if isinstance(resume_blob, memoryview):
+        resume_bytes = bytes(resume_blob)
+    else:
+        resume_bytes = resume_blob
+    
+    # Extract text from PDF
+    try:
+        resume_text = extract_text_from_pdf(resume_bytes)
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+    
+    if not resume_text:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Could not extract text from resume PDF")
+    
+    # Create prompt for ATS analysis with full resume text
+    prompt = f"""Analyze this resume and provide an ATS (Applicant Tracking System) score and feedback.
 
-Resume (base64): {resume_base64[:5000]}... (truncated)
+Resume Content:
+{resume_text}
 
 Please respond ONLY with valid JSON in this exact format:
 {{
@@ -130,15 +149,33 @@ def generate_questions(interview_session_id: int):
     cursor = get_db_cursor(conn)
     
     try:
-        # Get interview session details
-        cursor.execute("SELECT interview_type FROM interview_sessions WHERE id = %s", (interview_session_id,))
+        # Get session details (role, company, experience, job_description, resume_blob)
+        cursor.execute("""
+            SELECT role, company, experience_level, job_description, resume_blob 
+            FROM interview_sessions 
+            WHERE id = %s
+        """, (interview_session_id,))
         session = cursor.fetchone()
         
         if session is None:
             conn.close()
             raise HTTPException(status_code=404, detail="Interview session not found")
         
-        interview_type = session["interview_type"] or "general"
+        # Extract session context
+        role = session["role"]
+        company = session["company"]
+        experience = session["experience_level"]
+        job_description = session["job_description"]
+        resume_text = ""
+        
+        # Extract text from resume if present
+        if session["resume_blob"]:
+            try:
+                import base64
+                resume_bytes = base64.b64decode(session["resume_blob"])
+                resume_text = extract_text_from_pdf(resume_bytes)
+            except:
+                resume_text = ""
         
         # Get all Q&A history for this session
         cursor.execute("""
@@ -154,10 +191,10 @@ def generate_questions(interview_session_id: int):
             
             # Insert intro question into database
             cursor.execute("""
-                INSERT INTO interview_chit_chat (session_id, interview_type, question)
-                VALUES (%s, %s, %s)
+                INSERT INTO interview_chit_chat (session_id, question)
+                VALUES (%s, %s)
                 RETURNING id
-            """, (interview_session_id, interview_type, intro_question))
+            """, (interview_session_id, intro_question))
             question_id = cursor.fetchone()["id"]
             conn.commit()
             conn.close()
@@ -179,18 +216,44 @@ def generate_questions(interview_session_id: int):
         
         conversation_text = "\n".join(conversation)
         
-        # Generate next question using Gemini
-        prompt = f"""You are an expert interviewer conducting a {interview_type} interview.
+        # Build context section
+        context_parts = []
+        if role:
+            context_parts.append(f"Role: {role}")
+        if company:
+            context_parts.append(f"Company: {company}")
+        if job_description:
+            context_parts.append(f"Job Description: {job_description}")
+        if resume_text:
+            context_parts.append(f"Candidate Resume:\n{resume_text[:3000]}")
+        
+        real_context = ""
+        if context_parts:
+            context_text = "\n".join(context_parts)
+            real_context += f"Interview Context:\n{context_text}"
+        
+        # Build intro sentence dynamically
+        intro_part = "You are an expert interviewer conducting an interview"
+        if role:
+            intro_part += f" for the role of {role}"
+        if company:
+            intro_part += f" at {company}"
+        intro_part += "."
 
-Based on the conversation so far, generate the next interview question.
+        # Generate next question using Gemini
+        prompt = f"""{intro_part}
+
+{real_context}
 
 Conversation history:
 {conversation_text}
 
 Rules:
 1. Ask a relevant follow-up question based on the candidate's previous answers
-2. Keep questions professional and appropriate for a {interview_type} interview
-3. Response should ONLY be valid JSON in this exact format:
+2. Questions should be tailored to the role, company, and job requirements
+3. Consider the candidate's experience level ({experience} years) when framing questions
+4. Add a brief acknowledgment or transition before asking the question
+5. Response should ONLY be valid JSON in this exact format:
 {{
     "question": "<your next interview question>"
 }}
@@ -209,10 +272,10 @@ Respond with ONLY the JSON, no additional text."""
         
         # Insert new question into database
         cursor.execute("""
-            INSERT INTO interview_chit_chat (session_id, interview_type, question)
-            VALUES (%s, %s, %s)
+            INSERT INTO interview_chit_chat (session_id, question)
+            VALUES (%s, %s)
             RETURNING id
-        """, (interview_session_id, interview_type, next_question))
+        """, (interview_session_id, next_question))
         question_id = cursor.fetchone()["id"]
         conn.commit()
         conn.close()

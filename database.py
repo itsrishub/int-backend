@@ -51,6 +51,7 @@ def init_db():
             role TEXT,
             experience_level TEXT,
             interview_type TEXT,
+            status TEXT DEFAULT 'active',
             score INTEGER,
             feedback TEXT,
             duration INTEGER,
