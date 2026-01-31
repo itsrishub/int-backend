@@ -23,8 +23,6 @@ services:
         value: video
       - key: DEBUG
         value: false
-      - key: PYTHON_VERSION
-        value: "3.11.7"
     
     # Health check
     healthCheckPath: /api/v1/health

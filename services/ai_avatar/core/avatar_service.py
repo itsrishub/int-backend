@@ -421,9 +421,14 @@ class AvatarService:
         
         try:
             session = await self._get_session()
+            # Try the /credits endpoint first
             async with session.get(f"{self.api_url}/credits") as response:
                 if response.status == 200:
                     return await response.json()
+                elif response.status == 403:
+                    # Credits endpoint may not be available on all plans
+                    # Return a message instead of error
+                    return {"message": "Credits info not available (API limitation)", "status": "active"}
                 else:
                     return {"error": f"API error: {response.status}"}
         except Exception as e:

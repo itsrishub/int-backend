@@ -136,7 +136,8 @@ Your service will be available at: `https://your-app-name.onrender.com`
 
 Once deployed, update your Android client to use:
 - **HTTP API**: `https://your-app.onrender.com/api/v1/...`
-- **WebSocket**: `wss://your-app.onrender.com/api/v1/interview/session`
+
+> **Note**: WebSocket is available for local testing but use HTTP endpoints for production (Render free tier).
 
 ---
 
@@ -167,7 +168,7 @@ When D-ID is not configured or fails, provides audio with lip-sync timing data.
 
 ## API Reference
 
-### HTTP Endpoints
+### Status Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -178,101 +179,90 @@ When D-ID is not configured or fails, provides audio with lip-sync timing data.
 | `/docs` | GET | Swagger UI |
 | `/openapi.json` | GET | OpenAPI spec |
 
-### WebSocket Endpoint
+### Interview Endpoints (HTTP REST)
 
-```
-ws://localhost:8000/api/v1/interview/session
-wss://your-app.onrender.com/api/v1/interview/session  (production)
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/interview/start` | POST | Start new interview session |
+| `/api/v1/interview/{session_id}/question` | GET | Get next question with avatar |
+| `/api/v1/interview/{session_id}/answer` | POST | Submit answer |
+| `/api/v1/interview/{session_id}/status` | GET | Get session status |
+| `/api/v1/interview/{session_id}` | DELETE | End session |
 
-### Message Flow
+---
 
-1. **Connect** → Server sends `session_info` (includes `avatar_mode`)
-2. **Send** `{"type": "start"}` → Server sends first `question`
-3. **Send** `{"type": "answer", "data": {"question_id": 1, "answer_text": "..."}}` → Server sends next `question`
-4. Repeat until server sends `complete`
+## HTTP Interview Flow
 
-### Client → Server Messages
+### Step 1: Start Interview
 
-```json
-{"type": "start"}
-{"type": "answer", "data": {"question_id": 1, "answer_text": "My answer..."}}
-{"type": "ping", "data": {"timestamp": 1234567890}}
-{"type": "end"}
+```bash
+curl -X POST https://your-app.onrender.com/api/v1/interview/start
 ```
 
-### Server → Client: Session Info
-
+**Response:**
 ```json
 {
-  "type": "session_info",
-  "data": {
-    "session_id": "session_abc123",
-    "state": "created",
-    "total_questions": 10,
-    "avatar_mode": "video",
-    "avatar_image_url": "https://clips-presenters.d-id.com/..."
-  }
+  "session_id": "session_abc123",
+  "state": "in_progress",
+  "total_questions": 10,
+  "avatar_mode": "video",
+  "avatar_image_url": "https://clips-presenters.d-id.com/.../image.png",
+  "idle_video_url": "https://clips-presenters.d-id.com/.../idle.mp4"
 }
 ```
 
-### Server → Client: Question (Video Mode)
+### Step 2: Get First Question
 
-```json
-{
-  "type": "question",
-  "data": {
-    "question_id": 1,
-    "question_text": "Tell me about yourself...",
-    "question_type": "introduction",
-    "avatar_mode": "video",
-    "video_url": "https://d-id-clips-prod.s3.us-west-2.amazonaws.com/...",
-    "idle_video_url": "https://clips-presenters.d-id.com/.../idle.mp4",
-    "audio_base64": "//uQxAAA...",
-    "audio_duration": 10.5,
-    "current_question": 1,
-    "total_questions": 10,
-    "latency_ms": 45000
-  }
-}
+```bash
+curl https://your-app.onrender.com/api/v1/interview/session_abc123/question
 ```
 
-### Server → Client: Question (Audio-Only Mode)
-
+**Response (Video Mode):**
 ```json
 {
   "type": "question",
-  "data": {
-    "question_id": 1,
-    "question_text": "Tell me about yourself...",
-    "question_type": "introduction",
-    "avatar_mode": "audio_only",
-    "video_url": null,
-    "idle_video_url": "https://clips-presenters.d-id.com/.../idle.mp4",
-    "audio_base64": "//uQxAAA...",
-    "audio_duration": 10.5,
-    "word_timings": [
-      {"word": "Tell", "start": 0.0, "end": 0.3},
-      {"word": "me", "start": 0.3, "end": 0.5}
-    ],
-    "avatar_image_url": "https://clips-presenters.d-id.com/.../image.png",
-    "current_question": 1,
-    "total_questions": 10
-  }
+  "question_id": 1,
+  "question_text": "Tell me about yourself...",
+  "question_type": "introduction",
+  "avatar_mode": "video",
+  "video_url": "https://d-id-clips-prod.s3.us-west-2.amazonaws.com/...",
+  "idle_video_url": "https://clips-presenters.d-id.com/.../idle.mp4",
+  "audio_base64": "//uQxAAA...",
+  "audio_duration": 10.5,
+  "current_question": 1,
+  "total_questions": 10,
+  "latency_ms": 45000
 }
 ```
 
-### Server → Client: Complete
+> ⚠️ **Note**: Video generation takes 30-90 seconds. Show idle video while waiting.
 
+### Step 3: Submit Answer
+
+```bash
+curl -X POST https://your-app.onrender.com/api/v1/interview/session_abc123/answer \
+  -H "Content-Type: application/json" \
+  -d '{"question_id": 1, "answer_text": "My name is John..."}'
+```
+
+**Response:** Next question (same format as Step 2) or completion message.
+
+### Step 4: Interview Complete
+
+When all questions are answered:
 ```json
 {
   "type": "complete",
-  "data": {
-    "message": "Congratulations! You have completed the interview.",
-    "questions_answered": 10,
-    "session_summary": {...}
-  }
+  "message": "Congratulations! You have completed the interview.",
+  "questions_answered": 10,
+  "session_summary": {...}
 }
+```
+
+### Step 5: End Session (Optional)
+
+```bash
+curl -X DELETE https://your-app.onrender.com/api/v1/interview/session_abc123
 ```
 
 ---
@@ -374,42 +364,95 @@ curl https://your-app.onrender.com/api/v1/health
 
 ## Android Client Integration
 
-The Android client should:
+The Android client should use HTTP REST endpoints:
 
-1. **Connect** to WebSocket endpoint (`wss://` for production)
-2. **Handle `session_info`** to know the `avatar_mode` and get `idle_video_url`
-3. **For `video` mode:**
-   - Download and cache `idle_video_url` for transitions
-   - Fetch and play video from `video_url` when question arrives
-4. **For `audio_only` mode:**
-   - Play `audio_base64` (decode from base64)
-   - Display `avatar_image_url`
-   - Use `word_timings` for mouth animation
-5. **Send answers** as `{"type": "answer", ...}`
-6. **Repeat** until `complete` message
+### Flow
 
-### Example Kotlin WebSocket Connection
+1. **POST `/interview/start`** → Get `session_id` and `idle_video_url`
+2. **Preload idle video** for smooth transitions
+3. **GET `/interview/{session_id}/question`** → Get question with avatar video
+4. **Play video** from `video_url` (or audio fallback)
+5. **POST `/interview/{session_id}/answer`** → Submit answer, get next question
+6. **Repeat** until `type: "complete"`
+
+### Example Kotlin HTTP Client
 
 ```kotlin
-val client = OkHttpClient()
-val request = Request.Builder()
-    .url("wss://your-app.onrender.com/api/v1/interview/session")
-    .build()
+import okhttp3.*
+import org.json.JSONObject
 
-val webSocket = client.newWebSocket(request, object : WebSocketListener() {
-    override fun onMessage(webSocket: WebSocket, text: String) {
-        val message = JSONObject(text)
-        when (message.getString("type")) {
-            "session_info" -> handleSessionInfo(message)
-            "question" -> handleQuestion(message)
-            "complete" -> handleComplete(message)
-        }
+class InterviewApi(private val baseUrl: String) {
+    private val client = OkHttpClient()
+    
+    // Step 1: Start interview
+    suspend fun startInterview(): JSONObject {
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/interview/start")
+            .post(RequestBody.create(null, ""))
+            .build()
+        
+        val response = client.newCall(request).execute()
+        return JSONObject(response.body?.string() ?: "{}")
     }
-})
+    
+    // Step 2: Get question (takes 30-90s for video generation)
+    suspend fun getQuestion(sessionId: String): JSONObject {
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/interview/$sessionId/question")
+            .get()
+            .build()
+        
+        val response = client.newCall(request).execute()
+        return JSONObject(response.body?.string() ?: "{}")
+    }
+    
+    // Step 3: Submit answer
+    suspend fun submitAnswer(sessionId: String, questionId: Int, answer: String): JSONObject {
+        val json = JSONObject().apply {
+            put("question_id", questionId)
+            put("answer_text", answer)
+        }
+        
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/interview/$sessionId/answer")
+            .post(RequestBody.create(
+                MediaType.parse("application/json"),
+                json.toString()
+            ))
+            .build()
+        
+        val response = client.newCall(request).execute()
+        return JSONObject(response.body?.string() ?: "{}")
+    }
+}
+
+// Usage
+val api = InterviewApi("https://your-app.onrender.com")
 
 // Start interview
-webSocket.send("""{"type": "start"}""")
+val session = api.startInterview()
+val sessionId = session.getString("session_id")
+val idleVideoUrl = session.getString("idle_video_url")
+
+// Preload idle video for smooth UX
+preloadVideo(idleVideoUrl)
+
+// Get first question (show idle video while waiting)
+showIdleVideo()
+val question = api.getQuestion(sessionId)
+playAvatarVideo(question.getString("video_url"))
+
+// Submit answer and get next question
+val nextQuestion = api.submitAnswer(sessionId, 1, "My answer...")
 ```
+
+### Handling Long Latency
+
+Since video generation takes 30-90 seconds:
+
+1. **Show idle video** while waiting for API response
+2. **Use loading indicator** with estimated time
+3. **Cache videos** for potential retry/replay
 
 ---
 

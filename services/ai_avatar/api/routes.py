@@ -106,7 +106,232 @@ async def get_avatar_status():
 
 
 # ============================================================================
-# WebSocket Interview Session
+# HTTP Interview Session (REST API - Render Compatible)
+# ============================================================================
+
+@router.post("/interview/start")
+async def start_interview():
+    """
+    Start a new interview session.
+    
+    Returns session_id and initial session info.
+    Client should use session_id for subsequent requests.
+    """
+    # Create a new session
+    session = session_manager.create_session()
+    question_service.start_session(session.session_id)
+    
+    # Determine avatar mode
+    current_avatar_mode = "video" if avatar_service.is_configured else "audio_only"
+    
+    # Update session state
+    session_manager.update_session_state(session.session_id, SessionState.IN_PROGRESS)
+    
+    logger.info(f"New HTTP interview session: {session.session_id} (avatar_mode: {current_avatar_mode})")
+    
+    return {
+        "session_id": session.session_id,
+        "state": "in_progress",
+        "total_questions": question_service.get_total_questions(),
+        "avatar_mode": current_avatar_mode,
+        "avatar_image_url": DID_PRESENTER_IMAGE,
+        "idle_video_url": DID_PRESENTER_IDLE_VIDEO,
+    }
+
+
+@router.get("/interview/{session_id}/question")
+async def get_next_question_http(session_id: str):
+    """
+    Get the next question for the interview session.
+    
+    First call returns question 1. After submitting an answer,
+    call this again to get the next question.
+    
+    Returns question with avatar video (or audio fallback).
+    Note: Video generation takes 30-90 seconds.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Check if interview is already complete
+    if question_service.is_interview_complete(session_id):
+        return await get_interview_complete_response(session_id)
+    
+    # Get avatar mode
+    avatar_mode = AvatarMode.VIDEO if avatar_service.is_configured else AvatarMode.AUDIO_ONLY
+    
+    # Generate question response
+    return await generate_question_response(session_id, avatar_mode)
+
+
+@router.post("/interview/{session_id}/answer")
+async def submit_answer_http(session_id: str, answer: dict):
+    """
+    Submit an answer to the current question.
+    
+    Request body:
+    {
+        "question_id": 1,
+        "answer_text": "My answer..."
+    }
+    
+    Returns the next question or completion message.
+    Note: Video generation takes 30-90 seconds.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    question_id = answer.get("question_id")
+    answer_text = answer.get("answer_text", "")
+    
+    if question_id is None:
+        raise HTTPException(status_code=400, detail="question_id is required")
+    
+    # Record the answer
+    session_manager.record_answer(session_id, question_id, answer_text)
+    session_manager.update_session_state(session_id, SessionState.PROCESSING)
+    
+    logger.info(f"HTTP: Recorded answer for question {question_id} in session {session_id}")
+    
+    # Check if interview is complete
+    if question_service.is_interview_complete(session_id):
+        return await get_interview_complete_response(session_id)
+    
+    # Get avatar mode
+    avatar_mode = AvatarMode.VIDEO if avatar_service.is_configured else AvatarMode.AUDIO_ONLY
+    
+    # Generate next question response
+    return await generate_question_response(session_id, avatar_mode, previous_answer=answer_text)
+
+
+@router.get("/interview/{session_id}/status")
+async def get_session_status(session_id: str):
+    """Get the current status of an interview session."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    current, total = question_service.get_progress(session_id)
+    is_complete = question_service.is_interview_complete(session_id)
+    
+    return {
+        "session_id": session_id,
+        "state": session.state.value,
+        "current_question": current,
+        "total_questions": total,
+        "is_complete": is_complete,
+        "answers_recorded": len(session.answers) if hasattr(session, 'answers') else 0,
+    }
+
+
+@router.delete("/interview/{session_id}")
+async def end_interview(session_id: str):
+    """End an interview session and cleanup resources."""
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Get summary before cleanup
+    summary = session_manager.get_session_summary(session_id)
+    
+    # Cleanup
+    question_service.end_session(session_id)
+    session_manager.delete_session(session_id)
+    
+    logger.info(f"HTTP: Session ended: {session_id}")
+    
+    return {
+        "message": "Session ended successfully",
+        "session_id": session_id,
+        "summary": summary,
+    }
+
+
+async def generate_question_response(
+    session_id: str,
+    avatar_mode: AvatarMode,
+    previous_answer: Optional[str] = None,
+) -> dict:
+    """Generate a question response with avatar video or audio."""
+    # Get next question from mock service
+    question = question_service.get_next_question(session_id, previous_answer)
+    
+    if question is None:
+        return await get_interview_complete_response(session_id)
+    
+    # Update session
+    session_manager.set_current_question(session_id, question.id)
+    session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
+    
+    # Generate audio with TTS (for fallback/audio-only mode)
+    logger.info(f"HTTP: Generating audio for question {question.id}")
+    tts_result = await tts_service.generate_speech(question.text)
+    
+    # Get progress
+    current, total = question_service.get_progress(session_id)
+    
+    # Initialize response variables
+    video_url: Optional[str] = None
+    latency_ms: Optional[float] = None
+    actual_avatar_mode = avatar_mode
+    
+    # Get presenter's idle video
+    idle_video_url = await avatar_service.get_cached_idle_video()
+    
+    # Generate avatar video if in video mode
+    if avatar_mode == AvatarMode.VIDEO:
+        logger.info(f"HTTP: Generating avatar video for question {question.id}")
+        avatar_result = await avatar_service.generate_avatar_video(text=question.text)
+        
+        if avatar_result.success and avatar_result.video_url:
+            video_url = avatar_result.video_url
+            latency_ms = avatar_result.total_time_ms
+            logger.info(f"HTTP: Avatar video ready: {video_url} (latency: {latency_ms:.0f}ms)")
+        else:
+            logger.warning(f"HTTP: Avatar generation failed: {avatar_result.error_message}")
+            actual_avatar_mode = AvatarMode.AUDIO_ONLY
+    
+    # Use presenter's image for audio-only fallback
+    fallback_image = DID_PRESENTER_IMAGE if actual_avatar_mode == AvatarMode.AUDIO_ONLY else None
+    
+    return {
+        "type": "question",
+        "question_id": question.id,
+        "question_text": question.text,
+        "question_type": question.type.value,
+        "avatar_mode": actual_avatar_mode.value,
+        "video_url": video_url,
+        "idle_video_url": idle_video_url,
+        "audio_base64": tts_result.audio_base64,
+        "audio_duration": tts_result.duration,
+        "word_timings": [
+            {"word": wt.word, "start": wt.start, "end": wt.end}
+            for wt in tts_result.word_timings
+        ] if actual_avatar_mode == AvatarMode.AUDIO_ONLY else [],
+        "avatar_image_url": fallback_image,
+        "current_question": current,
+        "total_questions": total,
+        "latency_ms": latency_ms,
+    }
+
+
+async def get_interview_complete_response(session_id: str) -> dict:
+    """Generate interview completion response."""
+    session_manager.complete_session(session_id)
+    summary = session_manager.get_session_summary(session_id)
+    
+    return {
+        "type": "complete",
+        "message": "Congratulations! You have completed the interview.",
+        "questions_answered": summary["questions_answered"] if summary else 0,
+        "session_summary": summary,
+    }
+
+
+# ============================================================================
+# WebSocket Interview Session (for local testing)
 # ============================================================================
 
 @router.websocket("/interview/session")
