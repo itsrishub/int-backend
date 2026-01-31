@@ -1,11 +1,11 @@
 from flask import Flask
-from endpoints import api_bp
+from endpoints import api
 
 
 app = Flask(__name__)
 
 
-app.register_blueprint(api_bp)
+app.register_blueprint(api)
 
 
 @app.get("/")
