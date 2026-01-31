@@ -19,10 +19,6 @@ class EndInterviewSession(BaseModel):
     feedback: Optional[str] = None
     score: Optional[int] = None
 
-@router.get("/health")
-def health():
-    return {"status": "ok"}
-
 
 @router.get("/email/{email}")
 def get_user_by_email(email: str):

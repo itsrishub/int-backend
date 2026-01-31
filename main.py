@@ -23,3 +23,7 @@ app.include_router(theai_router)
 @app.get("/")
 def read_root():
     return {"message": "Hello from Interview AI API"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
