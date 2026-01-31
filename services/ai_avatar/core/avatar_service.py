@@ -227,10 +227,24 @@ class AvatarService:
         presenter_id: str,
     ) -> Optional[str]:
         """Create a clip request with D-ID Clips API."""
+        # Try /clips first, fallback to /talks if it fails
+        clip_id = await self._create_clip_v2(text, presenter_id)
+        if clip_id:
+            return clip_id
+        
+        # Fallback to /talks endpoint
+        logger.info("Clips API failed, falling back to /talks endpoint")
+        return await self._create_talk_v2(text)
+
+    async def _create_clip_v2(
+        self,
+        text: str,
+        presenter_id: str,
+    ) -> Optional[str]:
+        """Create a clip request with D-ID Clips API (v2)."""
         session = await self._get_session()
         
         # D-ID /clips endpoint with presenter_id and text input
-        # Uses D-ID's hosted presenters for reliable video generation
         payload = {
             "presenter_id": presenter_id,
             "script": {
@@ -238,7 +252,7 @@ class AvatarService:
                 "input": text,
                 "provider": {
                     "type": "microsoft",
-                    "voice_id": DID_TTS_VOICE,  # Professional female voice
+                    "voice_id": DID_TTS_VOICE,
                 }
             },
             "config": {
@@ -246,8 +260,7 @@ class AvatarService:
             },
         }
 
-        logger.info(f"Creating D-ID clip with presenter={presenter_id}, voice={DID_TTS_VOICE}, "
-                   f"text: '{text[:50]}...'")
+        logger.info(f"Creating D-ID clip with presenter={presenter_id}, voice={DID_TTS_VOICE}")
         
         try:
             async with session.post(
@@ -255,62 +268,119 @@ class AvatarService:
                 json=payload,
             ) as response:
                 response_text = await response.text()
-                logger.info(f"D-ID Clips API response status: {response.status}")
+                logger.info(f"D-ID Clips API response: {response.status}")
                 
                 if response.status in (200, 201):
                     import json
                     data = json.loads(response_text)
                     clip_id = data.get("id")
-                    logger.info(f"D-ID clip created successfully: {clip_id}")
+                    logger.info(f"D-ID clip created: {clip_id}")
                     return clip_id
                 else:
-                    logger.error(f"D-ID Clips API error: {response.status} - {response_text[:500]}")
+                    logger.warning(f"D-ID Clips API error: {response.status} - {response_text[:300]}")
                     return None
         except Exception as e:
-            logger.error(f"D-ID Clips API request failed: {str(e)}")
+            logger.error(f"D-ID Clips API failed: {str(e)}")
+            return None
+
+    async def _create_talk_v2(self, text: str) -> Optional[str]:
+        """Create a talk request with D-ID Talks API (fallback)."""
+        session = await self._get_session()
+        
+        # D-ID /talks endpoint with source_url (image) and text
+        payload = {
+            "source_url": DID_PRESENTER_IMAGE,
+            "script": {
+                "type": "text",
+                "input": text,
+                "provider": {
+                    "type": "microsoft",
+                    "voice_id": DID_TTS_VOICE,
+                }
+            },
+            "config": {
+                "fluent": True,
+                "pad_audio": 0.5,
+            },
+        }
+
+        logger.info(f"Creating D-ID talk with image, voice={DID_TTS_VOICE}")
+        
+        try:
+            async with session.post(
+                f"{self.api_url}/talks",
+                json=payload,
+            ) as response:
+                response_text = await response.text()
+                logger.info(f"D-ID Talks API response: {response.status}")
+                
+                if response.status in (200, 201):
+                    import json
+                    data = json.loads(response_text)
+                    talk_id = data.get("id")
+                    logger.info(f"D-ID talk created: {talk_id}")
+                    return talk_id
+                else:
+                    logger.error(f"D-ID Talks API error: {response.status} - {response_text[:300]}")
+                    return None
+        except Exception as e:
+            logger.error(f"D-ID Talks API failed: {str(e)}")
             return None
 
     async def _poll_for_clip_result(self, clip_id: str) -> AvatarResult:
-        """Poll D-ID Clips API until video is ready."""
+        """Poll D-ID API until video is ready (supports both /clips and /talks)."""
         session = await self._get_session()
         
         timeout = AVATAR_GENERATION_TIMEOUT
         elapsed = 0
         
+        # Determine endpoint based on ID prefix
+        # Clips start with "clp_", talks start with "tlk_"
+        if clip_id.startswith("clp_"):
+            endpoint = f"{self.api_url}/clips/{clip_id}"
+        else:
+            endpoint = f"{self.api_url}/talks/{clip_id}"
+        
+        logger.info(f"Polling for video: {endpoint}")
+        
         while elapsed < timeout:
-            async with session.get(f"{self.api_url}/clips/{clip_id}") as response:
-                if response.status == 200:
-                    data = await response.json()
-                    status = data.get("status", "")
-                    
-                    if status == "done":
-                        video_url = data.get("result_url")
-                        duration = data.get("duration", 0)
+            try:
+                async with session.get(endpoint) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        status = data.get("status", "")
                         
-                        logger.info(f"Avatar video ready: {video_url}")
+                        if status == "done":
+                            video_url = data.get("result_url")
+                            duration = data.get("duration", 0)
+                            
+                            logger.info(f"Avatar video ready: {video_url}")
+                            
+                            return AvatarResult(
+                                success=True,
+                                video_url=video_url,
+                                duration=duration,
+                                clip_id=clip_id,
+                            )
                         
-                        return AvatarResult(
-                            success=True,
-                            video_url=video_url,
-                            duration=duration,
-                            clip_id=clip_id,
-                        )
+                        elif status == "error":
+                            error = data.get("error", {})
+                            error_msg = error.get("description", "Unknown error") if isinstance(error, dict) else str(error)
+                            logger.error(f"D-ID error: {error_msg}")
+                            return AvatarResult(
+                                success=False,
+                                error_message=error_msg,
+                                clip_id=clip_id,
+                            )
+                        
+                        # Still processing
+                        logger.debug(f"Video {clip_id} status: {status}, elapsed: {elapsed}s")
                     
-                    elif status == "error":
-                        error = data.get("error", {})
-                        error_msg = error.get("description", "Unknown error") if isinstance(error, dict) else str(error)
-                        return AvatarResult(
-                            success=False,
-                            error_message=error_msg,
-                            clip_id=clip_id,
-                        )
-                    
-                    # Still processing
-                    logger.debug(f"Clip {clip_id} status: {status}")
-                
-                else:
-                    error_text = await response.text()
-                    logger.error(f"Poll error: {response.status} - {error_text}")
+                    else:
+                        error_text = await response.text()
+                        logger.warning(f"Poll response: {response.status} - {error_text[:200]}")
+            except Exception as e:
+                logger.warning(f"Poll error: {e}")
 
             await asyncio.sleep(AVATAR_POLL_INTERVAL)
             elapsed += AVATAR_POLL_INTERVAL
@@ -421,15 +491,18 @@ class AvatarService:
         
         try:
             session = await self._get_session()
-            # Try the /credits endpoint first
             async with session.get(f"{self.api_url}/credits") as response:
                 if response.status == 200:
-                    return await response.json()
-                elif response.status == 403:
-                    # Credits endpoint may not be available on all plans
-                    # Return a message instead of error
-                    return {"message": "Credits info not available (API limitation)", "status": "active"}
+                    data = await response.json()
+                    # Extract useful info from response
+                    return {
+                        "remaining": data.get("remaining", 0),
+                        "total": data.get("total", 0),
+                        "credits": data.get("credits", []),
+                    }
                 else:
+                    error_text = await response.text()
+                    logger.warning(f"Credits API error: {response.status} - {error_text}")
                     return {"error": f"API error: {response.status}"}
         except Exception as e:
             return {"error": str(e)}
