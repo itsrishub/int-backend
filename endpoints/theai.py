@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from g4f.client import Client
-from database import get_db_connection
+from database import get_db_connection, get_db_cursor
 import base64
 import json
 
@@ -12,10 +12,10 @@ client = Client()
 @router.get("/resume/{user_id}")
 def analyze_resume(user_id: int):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_db_cursor(conn)
     
     # Get resume blob for the user
-    cursor.execute("SELECT id, resume_blob FROM resumes WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
+    cursor.execute("SELECT id, resume_blob FROM resumes WHERE user_id = %s ORDER BY created_at DESC LIMIT 1", (user_id,))
     resume = cursor.fetchone()
     
     if resume is None:
@@ -26,7 +26,14 @@ def analyze_resume(user_id: int):
     resume_blob = resume["resume_blob"]
     
     # Convert blob to base64 for GPT (it can't read binary directly)
-    resume_base64 = base64.b64encode(resume_blob).decode('utf-8') if resume_blob else None
+    # PostgreSQL returns memoryview or bytes for BYTEA
+    if resume_blob:
+        if isinstance(resume_blob, memoryview):
+            resume_base64 = base64.b64encode(bytes(resume_blob)).decode('utf-8')
+        else:
+            resume_base64 = base64.b64encode(resume_blob).decode('utf-8')
+    else:
+        resume_base64 = None
     
     if not resume_base64:
         conn.close()
@@ -81,8 +88,8 @@ Respond with ONLY the JSON, no additional text."""
         if result.get("ats_score") is not None:
             cursor.execute('''
                 UPDATE resumes 
-                SET ats_score = ?, feedback = ?, strengths = ?, weaknesses = ?, keywords_found = ?, missing_keywords = ?
-                WHERE id = ?
+                SET ats_score = %s, feedback = %s, strengths = %s, weaknesses = %s, keywords_found = %s, missing_keywords = %s
+                WHERE id = %s
             ''', (
                 result["ats_score"],
                 result.get("feedback", ""),

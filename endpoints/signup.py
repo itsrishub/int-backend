@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import base64
-from database import get_db_connection
+from database import get_db_connection, get_db_cursor
 
 router = APIRouter(prefix="/api/signup", tags=["Signup"])
 
@@ -20,13 +20,14 @@ class UserSignup(BaseModel):
 @router.post("/")
 def create_user(user: UserSignup):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_db_cursor(conn)
     
     try:
         # Insert into users table
         cursor.execute('''
             INSERT INTO users (profile_photo, full_name, email, primary_role, year_of_exp, rank)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
         ''', (
             user.profile_photo,
             user.full_name,
@@ -35,7 +36,7 @@ def create_user(user: UserSignup):
             user.year_of_exp,
             user.rank
         ))
-        user_id = cursor.lastrowid
+        user_id = cursor.fetchone()['id']
         
         # Insert resume into resumes table if provided
         resume_id = None
@@ -44,9 +45,10 @@ def create_user(user: UserSignup):
             resume_blob = base64.b64decode(user.resume)
             cursor.execute('''
                 INSERT INTO resumes (user_id, resume_blob)
-                VALUES (?, ?)
+                VALUES (%s, %s)
+                RETURNING id
             ''', (user_id, resume_blob))
-            resume_id = cursor.lastrowid
+            resume_id = cursor.fetchone()['id']
         
         conn.commit()
         
@@ -66,9 +68,9 @@ def create_user(user: UserSignup):
 @router.get("/{user_id}")
 def get_user(user_id: int):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_db_cursor(conn)
     
-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
     user = cursor.fetchone()
     conn.close()
     

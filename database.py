@@ -1,16 +1,38 @@
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
+from dotenv import load_dotenv
 
-# Use /tmp for Vercel serverless (writable but temporary)
-DATABASE_NAME = "/tmp/interview_ai.db"
-# DATABASE_NAME = "interview_ai.db"
+load_dotenv()
+
+# Supabase PostgreSQL credentials from environment variables
+DATABASE_URL = os.getenv("SUPABASE_DATABASE_URL")
+# Or use individual credentials:
+DB_HOST = os.getenv("SUPABASE_DB_HOST")
+DB_PORT = os.getenv("SUPABASE_DB_PORT", "5432")
+DB_NAME = os.getenv("SUPABASE_DB_NAME", "postgres")
+DB_USER = os.getenv("SUPABASE_DB_USER")
+DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
 
 
 def get_db_connection():
-    """Get a connection to the SQLite database."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    conn.row_factory = sqlite3.Row
+    """Get a connection to the PostgreSQL database."""
+    if DATABASE_URL:
+        conn = psycopg2.connect(DATABASE_URL)
+    else:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
     return conn
+
+
+def get_db_cursor(conn):
+    """Get a cursor that returns rows as dictionaries."""
+    return conn.cursor(cursor_factory=RealDictCursor)
 
 
 def init_db():
@@ -20,7 +42,7 @@ def init_db():
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             profile_photo TEXT,
             full_name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
@@ -33,7 +55,7 @@ def init_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS interview_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id INTEGER,
             role TEXT,
             experience_level TEXT,
@@ -49,7 +71,7 @@ def init_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS interview_chit_chat (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             session_id INTEGER,
             interview_type TEXT,
             question TEXT,
@@ -60,9 +82,9 @@ def init_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS resumes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id INTEGER,
-            resume_blob BLOB,
+            resume_blob BYTEA,
             ats_score INTEGER,
             feedback TEXT,
             strengths TEXT,
@@ -75,7 +97,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("Database initialized successfully:", DATABASE_NAME)
+    print("Database initialized successfully (PostgreSQL)")
 
 
 if __name__ == "__main__":

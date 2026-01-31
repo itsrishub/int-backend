@@ -1,2 +1,4 @@
 fastapi
 g4f
+python-dotenv
+psycopg2-binary

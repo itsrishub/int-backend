@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from database import get_db_connection
+from database import get_db_connection, get_db_cursor
 
 router = APIRouter(prefix="/api/generic", tags=["Generic"])
 
@@ -23,19 +23,20 @@ class EndInterviewSession(BaseModel):
 @router.post("/start_interview_session")
 def start_interview_session(session: StartInterviewSession):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_db_cursor(conn)
     
     try:
         cursor.execute('''
             INSERT INTO interview_sessions (user_id, interview_type, start_time)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
+            RETURNING id
         ''', (
             session.user_id,
             session.interview_type,
             session.start_time
         ))
+        interview_session_id = cursor.fetchone()['id']
         conn.commit()
-        interview_session_id = cursor.lastrowid
         
         return {
             "success": True,
@@ -52,11 +53,11 @@ def start_interview_session(session: StartInterviewSession):
 @router.post("/end_interview_session")
 def end_interview_session(session: EndInterviewSession):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_db_cursor(conn)
     
     try:
         # Get the start_time from the session
-        cursor.execute("SELECT start_time FROM interview_sessions WHERE id = ?", (session.interview_session_id,))
+        cursor.execute("SELECT start_time FROM interview_sessions WHERE id = %s", (session.interview_session_id,))
         row = cursor.fetchone()
         
         if row is None:
@@ -69,7 +70,11 @@ def end_interview_session(session: EndInterviewSession):
         duration = None
         if start_time_str:
             try:
-                start_time = datetime.fromisoformat(start_time_str)
+                # Handle both datetime object and string
+                if isinstance(start_time_str, datetime):
+                    start_time = start_time_str
+                else:
+                    start_time = datetime.fromisoformat(start_time_str)
                 end_time = datetime.fromisoformat(end_time_str)
                 duration = int((end_time - start_time).total_seconds())
             except:
@@ -78,8 +83,8 @@ def end_interview_session(session: EndInterviewSession):
         # Update the session with end_time, feedback, score, duration
         cursor.execute('''
             UPDATE interview_sessions 
-            SET end_time = ?, feedback = ?, score = ?, duration = ?
-            WHERE id = ?
+            SET end_time = %s, feedback = %s, score = %s, duration = %s
+            WHERE id = %s
         ''', (
             end_time_str,
             session.feedback,
