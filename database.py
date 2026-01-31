@@ -6,27 +6,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Supabase PostgreSQL credentials from environment variables
-# DATABASE_URL = os.getenv("SUPABASE_DATABASE_URL")
+DATABASE_URL = os.getenv("SUPABASE_DATABASE_URL")
 # Or use individual credentials:
-DB_HOST = os.getenv("SUPABASE_DB_HOST")
-DB_PORT = "6543"  # Use Supabase connection pooler for serverless (transaction mode)
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+# DB_HOST = os.getenv("SUPABASE_DB_HOST")
+# DB_PORT = "5432"
+# DB_NAME = "postgres"
+# DB_USER = "postgres"
+# DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
 
 
 def get_db_connection():
     """Get a connection to the PostgreSQL database."""
-    # if DATABASE_URL:
-    #     conn = psycopg2.connect(DATABASE_URL)
-    if DB_HOST and DB_USER and DB_PASSWORD:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
+    if DATABASE_URL:
+        conn = psycopg2.connect(DATABASE_URL)
+    # if DB_HOST and DB_USER and DB_PASSWORD:
+    #     conn = psycopg2.connect(
+    #         host=DB_HOST,
+    #         port=DB_PORT,
+    #         dbname=DB_NAME,
+    #         user=DB_USER,
+    #         password=DB_PASSWORD
+    #     )
     else:
         raise RuntimeError(
             "Missing Supabase database credentials. "
