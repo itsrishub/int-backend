@@ -1,12 +1,78 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import base64
+from database import get_db_connection
 
 router = APIRouter(prefix="/api/signup", tags=["Signup"])
 
+
+class UserSignup(BaseModel):
+    profile_photo: Optional[str] = None  # base64 string
+    full_name: str
+    email: str
+    primary_role: Optional[str] = None
+    year_of_exp: Optional[int] = None
+    rank: Optional[int] = None
+    resume: Optional[str] = None  # base64 encoded PDF
+
+
 @router.post("/")
-def create_user():
-    return {"message": "User created"}
+def create_user(user: UserSignup):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Insert into users table
+        cursor.execute('''
+            INSERT INTO users (profile_photo, full_name, email, primary_role, year_of_exp, rank)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            user.profile_photo,
+            user.full_name,
+            user.email,
+            user.primary_role,
+            user.year_of_exp,
+            user.rank
+        ))
+        user_id = cursor.lastrowid
+        
+        # Insert resume into resumes table if provided
+        resume_id = None
+        if user.resume:
+            # Decode base64 to binary
+            resume_blob = base64.b64decode(user.resume)
+            cursor.execute('''
+                INSERT INTO resumes (user_id, resume_blob)
+                VALUES (?, ?)
+            ''', (user_id, resume_blob))
+            resume_id = cursor.lastrowid
+        
+        conn.commit()
+        
+        return {
+            "success": True,
+            "message": "User created successfully",
+            "user_id": user_id,
+            "resume_id": resume_id
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
 
 
 @router.get("/{user_id}")
 def get_user(user_id: int):
-    return {"user_id": user_id}
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return dict(user)

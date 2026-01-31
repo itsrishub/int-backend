@@ -25,7 +25,49 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             primary_role TEXT,
             year_of_exp INTEGER,
-            location TEXT,
+            rank INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS interview_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            role TEXT,
+            experience_level TEXT,
+            interview_type TEXT,
+            score INTEGER,
+            feedback TEXT,
+            duration INTEGER,
+            start_time TIMESTAMP,
+            end_time TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS interview_chit_chat (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER,
+            interview_type TEXT,
+            question TEXT,
+            answer TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS resumes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            resume_blob BLOB,
+            ats_score INTEGER,
+            feedback TEXT,
+            strengths TEXT,
+            weaknesses TEXT,
+            keywords_found TEXT,
+            missing_keywords TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')

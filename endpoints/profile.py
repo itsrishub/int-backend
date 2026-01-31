@@ -1,16 +1,19 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from database import get_db_connection
 
 router = APIRouter(prefix="/api/profile", tags=["Profile"])
 
 
-@router.get("/")
-def get_profile():
-    return {
-        "data": [
-            {"id": 1, "name": "Sample Item 1", "value": 100},
-            {"id": 2, "name": "Sample Item 2", "value": 200},
-            {"id": 3, "name": "Sample Item 3", "value": 300},
-        ],
-        "total": 3,
-        "timestamp": "2024-01-01T00:00:00Z",
-    }
+@router.get("/{user_id}")
+def get_profile(user_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return dict(user)
