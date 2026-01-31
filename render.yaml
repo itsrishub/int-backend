@@ -8,6 +8,9 @@ services:
     region: oregon  # or singapore, frankfurt, ohio
     plan: free      # Free tier (sleeps after 15 min inactivity)
     
+    # Root directory (if deploying from monorepo)
+    rootDir: int-backend
+    
     # Build settings
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -21,7 +24,7 @@ services:
       - key: DEBUG
         value: false
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.7"
     
     # Health check
     healthCheckPath: /api/v1/health
