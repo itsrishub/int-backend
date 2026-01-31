@@ -18,6 +18,7 @@ def get_profile(user_id: str):
     cursor.execute("SELECT AVG(score) as avg_score FROM interview_sessions WHERE user_id = %s", (user_id,))
     avg_score = cursor.fetchone()['avg_score']
 
+    cursor.execute("SELECT resume_blob FROM resumes WHERE user_id = %s", (user_id,))
     resume_data = cursor.fetchone()
     resume_blob = resume_data['resume_blob'] if resume_data else None
     
