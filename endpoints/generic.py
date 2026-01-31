@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from database import get_db_connection, get_db_cursor
+from endpoints.theai import analyze_interview_performance
+import json
 
 router = APIRouter(prefix="/api/generic", tags=["Generic"])
 
@@ -113,13 +115,17 @@ def end_interview_session(session: EndInterviewSession):
     
     try:
         # Get the start_time from the session
-        cursor.execute("SELECT start_time FROM interview_sessions WHERE id = %s", (session.interview_session_id,))
+        cursor.execute("SELECT * FROM interview_sessions WHERE id = %s", (session.interview_session_id,))
         row = cursor.fetchone()
         
         if row is None:
             raise HTTPException(status_code=404, detail="Interview session not found")
         
         start_time_str = row["start_time"]
+        target_role = row["role"]
+        company = row["company"]
+        experience_level = row["experience_level"]
+        job_description = row["job_description"]
         end_time_str = session.end_time or datetime.now().isoformat()
         
         # Calculate duration in seconds
@@ -136,11 +142,36 @@ def end_interview_session(session: EndInterviewSession):
             except:
                 pass
         
+        # --- AI Analysis Integration ---
+        # 1. Fetch chat history
+        cursor.execute("""
+            SELECT question, answer FROM interview_chit_chat
+            WHERE session_id = %s
+            ORDER BY created_at ASC
+        """, (session.interview_session_id,))
+        history = cursor.fetchall()
+        
+        # 2. Prepare context
+        context = {
+            "role": target_role,
+            "company": company,
+            "experience_level": experience_level,
+            "job_description": job_description
+        }
+        
+        # 3. Call AI Analysis
+        analysis_result = analyze_interview_performance(history, context)
+        
+        score = analysis_result["score"]
+        feedback = analysis_result["feedback"]
+        strengths = json.dumps(analysis_result["strengths"])
+        area_of_improvement = json.dumps(analysis_result["area_of_improvement"])
+        
         # Update the session with end_time, feedback, score, duration, status
         final_status = 'closed'
         cursor.execute('''
             UPDATE interview_sessions 
-            SET end_time = %s, feedback = %s, score = %s, duration = %s, status = %s
+            SET end_time = %s, feedback = %s, score = %s, duration = %s, status = %s, strengths = %s, area_of_improvement = %s
             WHERE id = %s
         ''', (
             end_time_str,
@@ -148,6 +179,8 @@ def end_interview_session(session: EndInterviewSession):
             score,
             duration,
             final_status,
+            strengths,
+            area_of_improvement,
             session.interview_session_id
         ))
         conn.commit()
@@ -156,9 +189,11 @@ def end_interview_session(session: EndInterviewSession):
             "success": True,
             "message": "Interview session ended successfully",
             "id": session.interview_session_id,
+            "target_role": target_role,
             "duration": duration,
-            "feedback": session.feedback,
-            "score": session.score,
+            "area_of_improvement": analysis_result["area_of_improvement"],
+            "strengths": analysis_result["strengths"],
+            "score": score,
             "status": final_status
         }
     except HTTPException:

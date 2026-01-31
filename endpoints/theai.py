@@ -330,3 +330,89 @@ def send_answer(answer: AnswerQuestion):
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def analyze_interview_performance(history: list, context: dict) -> dict:
+    """
+    Analyze the full interview session and generate a scorecard.
+    """
+    try:
+        # Build conversation text
+        conversation = []
+        for qa in history:
+            conversation.append(f"Interviewer: {qa['question']}")
+            if qa['answer']:
+                conversation.append(f"Candidate: {qa['answer']}")
+        
+        conversation_text = "\n\n".join(conversation)
+        
+        # Build context text
+        context_parts = []
+        if context.get('role'):
+            context_parts.append(f"Target Role: {context['role']}")
+        if context.get('company'):
+            context_parts.append(f"Target Company: {context['company']}")
+        if context.get('experience_level'):
+            context_parts.append(f"Experience Level: {context['experience_level']} years")
+        if context.get('job_description'):
+            context_parts.append(f"Job Description: {context['job_description']}")
+            
+        context_text = "\n".join(context_parts)
+
+        prompt = f"""You are an expert technical interviewer and hiring manager. 
+Evaluate this interview session based on the conversation history and context provided.
+
+Context:
+{context_text}
+
+Interview Transcript:
+{conversation_text}
+
+Please provide a comprehensive evaluation in the following JSON format ONLY:
+{{
+    "score": <integer 0-100 overall score>,
+    "feedback": "<detailed summary feedback (1 paragraphs)>",
+    "strengths": ["<strength1>", "<strength2>", "<strength3>"],
+    "area_of_improvement": ["<area1>", "<area2>", "<area3>"]
+}}
+
+Scoring Criteria:
+- Technical accuracy of answers
+- Communication clarity and confidence
+- Problem-solving approach
+- Relevance to the specific role and experience level
+
+Respond with ONLY the valid JSON, no markdown formatting or extra text.
+"""
+
+        ai_response = generate_content(prompt)
+        
+        try:
+            # Clean up potential markdown code blocks if the model adds them
+            clean_response = ai_response.replace('```json', '').replace('```', '').strip()
+            result = json.loads(clean_response)
+            
+            # Ensure all keys exist
+            return {
+                "score": result.get("score", 0),
+                "feedback": result.get("feedback", "No feedback generated."),
+                "strengths": result.get("strengths", []),
+                "area_of_improvement": result.get("area_of_improvement", [])
+            }
+        except json.JSONDecodeError:
+            print(f"Failed to parse AI response: {ai_response}")
+            return {
+                "score": 0,
+                "feedback": "Failed to generate structured feedback. Please check the individual responses.",
+                "strengths": [],
+                "area_of_improvement": []
+            }
+            
+    except Exception as e:
+        print(f"Error in analyze_interview_performance: {e}")
+        return {
+            "score": 0,
+            "feedback": "An error occurred during verification.",
+            "strengths": [],
+            "area_of_improvement": []
+        }
