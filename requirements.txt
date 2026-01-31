@@ -1,2 +1,2 @@
 fastapi
-g4f[all]
+g4f
