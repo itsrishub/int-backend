@@ -93,7 +93,7 @@ def start_interview_session(session: StartInterviewSession):
         return {
             "success": True,
             "message": "Interview session created successfully",
-            "id": interview_session_id,
+            "session_id": interview_session_id,
             "status": "active"
         }
     except Exception as e:

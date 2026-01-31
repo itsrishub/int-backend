@@ -14,7 +14,7 @@ class UserSignup(BaseModel):
     primary_role: Optional[str] = None
     year_of_exp: Optional[int] = None
     rank: Optional[int] = None
-    # resume: Optional[str] = None  # base64 encoded PDF
+    resume: Optional[str] = None  # base64 encoded PDF
 
 
 @router.post("/")
@@ -39,24 +39,24 @@ def create_user(user: UserSignup):
         user_id = cursor.fetchone()['id']
         
         # Insert resume into resumes table if provided
-        # resume_id = None
-        # if user.resume:
-        #     # Decode base64 to binary
-        #     resume_blob = base64.b64decode(user.resume)
-        #     cursor.execute('''
-        #         INSERT INTO resumes (user_id, resume_blob)
-        #         VALUES (%s, %s)
-        #         RETURNING id
-        #     ''', (user_id, resume_blob))
-        #     resume_id = cursor.fetchone()['id']
+        resume_id = None
+        if user.resume:
+            # Decode base64 to binary
+            resume_blob = base64.b64decode(user.resume)
+            cursor.execute('''
+                INSERT INTO resumes (user_id, resume_blob)
+                VALUES (%s, %s)
+                RETURNING id
+            ''', (user_id, resume_blob))
+            resume_id = cursor.fetchone()['id']
         
         conn.commit()
         
         return {
             "success": True,
             "message": "User created successfully",
-            "user_id": user_id
-            # "resume_id": resume_id
+            "user_id": user_id,
+            "resume_id": resume_id
         }
     except Exception as e:
         conn.rollback()
