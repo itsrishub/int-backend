@@ -38,19 +38,30 @@ def get_config(user_id: str):
         LIMIT 1
     """, (user_id,))
     session = cursor.fetchone()
+
+    cursor.execute("""
+        SELECT * FROM interview_chit_chat
+        WHERE session_id = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (session["id"]))
+    last_question_id = cursor.fetchone()["id"]
+    
     conn.close()
     
     if session is None:
         return {
             "success": True,
             "has_active_session": False,
-            "session_id": None
+            "session_id": None,
+            "last_question_id": None
         }
     
     return {
         "success": True,
         "has_active_session": True,
-        "session_id": session["id"]
+        "session_id": session["id"],
+        "last_question_id": last_question_id
     }
 
 @router.post("/start_interview_session")
