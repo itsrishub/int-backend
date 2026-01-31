@@ -45,7 +45,7 @@ def get_config(user_id: str):
         ORDER BY created_at DESC
         LIMIT 1
     """, (session["id"]))
-    last_question_id = cursor.fetchone()["id"]
+    last_question_id = cursor.fetchone()
     
     conn.close()
     
@@ -61,7 +61,7 @@ def get_config(user_id: str):
         "success": True,
         "has_active_session": True,
         "session_id": session["id"],
-        "last_question_id": last_question_id
+        "last_question_id": last_question_id["id"]
     }
 
 @router.post("/start_interview_session")
