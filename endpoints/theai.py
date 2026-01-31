@@ -3,6 +3,7 @@ from g4f.client import Client
 from database import get_db_connection, get_db_cursor
 import base64
 import json
+import os
 
 router = APIRouter(prefix="/api/theai", tags=["AI"])
 
