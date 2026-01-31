@@ -26,23 +26,6 @@ class EndInterviewSession(BaseModel):
     status: Optional[str] = "closed"
 
 
-@router.get("/email/{email}")
-def get_user_by_email(email: str):
-    conn = get_db_connection()
-    cursor = get_db_cursor(conn)
-    
-    try:
-        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-        user = cursor.fetchone()
-        
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        return dict(user)
-    finally:
-        conn.close()
-
-
 @router.get("/config/{user_id}")
 def get_config(user_id: str):
     conn = get_db_connection()
