@@ -53,6 +53,7 @@ def init_db():
             interview_type TEXT,
             status TEXT DEFAULT 'active',
             resume_blob BYTEA,
+            company TEXT,
             job_description TEXT,
             score INTEGER,
             feedback TEXT,
