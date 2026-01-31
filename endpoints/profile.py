@@ -15,6 +15,10 @@ def get_profile(user_id: str):
     cursor.execute("SELECT COUNT(*) as count FROM interview_sessions WHERE user_id = %s", (user_id,))
     total_sessions = cursor.fetchone()['count']
     conn.close()
+
+    cursor.execute("SELECT AVG(score) as avg_score FROM interview_sessions WHERE user_id = %s", (user_id,))
+    avg_score = cursor.fetchone()['avg_score']
+    conn.close()
     
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -22,7 +26,7 @@ def get_profile(user_id: str):
     return {
         "user": dict(user),
         "total_sessions": total_sessions,
-        "best_score": best_score
+        "best_score": avg_score
     }
 
 
