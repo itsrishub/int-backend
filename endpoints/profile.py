@@ -27,7 +27,7 @@ def get_profile(user_id: str):
     
     return {
         "user": dict(user),
-        "resume": resume
+        "resume": resume,
         "total_sessions": total_sessions,
         "best_score": avg_score,
         "avg_score": avg_score
