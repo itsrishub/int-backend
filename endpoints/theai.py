@@ -4,21 +4,25 @@ from database import get_db_connection, get_db_cursor
 import base64
 import json
 import os
-
-# Set writable directory for g4f cache (Vercel only allows /tmp)
-os.environ["HOME"] = "/tmp"
-
-from g4f.client import Client
+import google.generativeai as genai
 
 router = APIRouter(prefix="/api/theai", tags=["AI"])
 
-MODEL = os.getenv("AI_MODEL")
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel(os.getenv("AI_MODEL"))
 
-client = Client()
 
 class AnswerQuestion(BaseModel):
     question_id: int
     answer: str
+
+
+def generate_content(prompt: str) -> str:
+    """Generate content using Gemini API."""
+    response = model.generate_content(prompt)
+    return response.text
+
 
 @router.get("/resume/{user_id}")
 def analyze_resume(user_id: int):
@@ -76,13 +80,7 @@ Consider these factors for ATS score:
 Respond with ONLY the JSON, no additional text."""
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            web_search=False
-        )
-        
-        ai_response = response.choices[0].message.content
+        ai_response = generate_content(prompt)
         
         # Try to parse JSON response
         try:
@@ -181,7 +179,7 @@ def generate_questions(interview_session_id: int):
         
         conversation_text = "\n".join(conversation)
         
-        # Generate next question using g4f
+        # Generate next question using Gemini
         prompt = f"""You are an expert interviewer conducting a {interview_type} interview.
 
 Based on the conversation so far, generate the next interview question.
@@ -199,13 +197,7 @@ Rules:
 
 Respond with ONLY the JSON, no additional text."""
 
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            web_search=False
-        )
-        
-        ai_response = response.choices[0].message.content
+        ai_response = generate_content(prompt)
         
         # Parse JSON response
         try:
