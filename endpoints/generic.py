@@ -71,11 +71,18 @@ def start_interview_session(session: StartInterviewSession):
     cursor = get_db_cursor(conn)
     
     try:
-        cursor.execute('''
+        # Terminate any existing active sessions for this user
+        cursor.execute("""
+            UPDATE interview_sessions 
+            SET status = 'terminated' 
+            WHERE user_id = %s AND status = 'active'
+        """, (session.user_id,))
+
+        cursor.execute("""
             INSERT INTO interview_sessions (user_id, start_time, status, resume_blob, role, company, experience_level, job_description, interview_type)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (
+        """, (
             session.user_id,
             session.start_time,
             'active',
