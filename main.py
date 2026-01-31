@@ -1,11 +1,12 @@
 from flask import Flask
-from endpoints import api
+from endpoints import hello, nothello
 
 
 app = Flask(__name__)
 
 
-app.register_blueprint(api)
+app.register_blueprint(hello)
+app.register_blueprint(nothello)
 
 
 @app.get("/")
