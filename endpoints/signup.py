@@ -72,11 +72,13 @@ def get_user(user_id: str):
     conn = get_db_connection()
     cursor = get_db_cursor(conn)
     
-    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return dict(user)
+    try:
+        cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return dict(user)
+    finally:
+        conn.close()
