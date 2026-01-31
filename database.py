@@ -6,20 +6,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Supabase PostgreSQL credentials from environment variables
-DATABASE_URL = os.getenv("SUPABASE_DATABASE_URL")
+# DATABASE_URL = os.getenv("SUPABASE_DATABASE_URL")
 # Or use individual credentials:
 DB_HOST = os.getenv("SUPABASE_DB_HOST")
-DB_PORT = os.getenv("SUPABASE_DB_PORT", "5432")
-DB_NAME = os.getenv("SUPABASE_DB_NAME", "postgres")
-DB_USER = os.getenv("SUPABASE_DB_USER")
+DB_PORT = "5432"
+DB_NAME = "postgres"
+DB_USER = "postgres"
 DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
 
 
 def get_db_connection():
     """Get a connection to the PostgreSQL database."""
-    if DATABASE_URL:
-        conn = psycopg2.connect(DATABASE_URL)
-    elif DB_HOST and DB_USER and DB_PASSWORD:
+    # if DATABASE_URL:
+    #     conn = psycopg2.connect(DATABASE_URL)
+    if DB_HOST and DB_USER and DB_PASSWORD:
         conn = psycopg2.connect(
             host=DB_HOST,
             port=DB_PORT,
