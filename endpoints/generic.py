@@ -225,7 +225,7 @@ def get_home_data(user_id: int):
         cursor.execute("""
             SELECT score, created_at, company, role, experience_level, interview_type 
             FROM interview_sessions 
-            WHERE user_id = %s AND status = 'closed'
+            WHERE user_id = %s
             ORDER BY created_at DESC
             LIMIT 10
         """, (user_id,))
