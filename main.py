@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from database import init_db
-from endpoints import signup_router, profile_router, generic_router, theai_router
+from endpoints import signup_router, login_router, profile_router, generic_router, theai_router
 
 
 @asynccontextmanager
@@ -15,6 +15,7 @@ app = FastAPI(lifespan=lifespan)
 
 # Include routers
 app.include_router(signup_router)
+app.include_router(login_router)
 app.include_router(profile_router)
 app.include_router(generic_router)
 app.include_router(theai_router)

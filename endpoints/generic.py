@@ -21,9 +21,6 @@ class StartInterviewSession(BaseModel):
 class EndInterviewSession(BaseModel):
     interview_session_id: int
     end_time: Optional[str] = None
-    feedback: Optional[str] = None
-    score: Optional[int] = None
-    status: Optional[str] = "closed"
 
 
 @router.get("/config/{user_id}")
@@ -140,15 +137,15 @@ def end_interview_session(session: EndInterviewSession):
                 pass
         
         # Update the session with end_time, feedback, score, duration, status
-        final_status = session.status if session.status in ['closed', 'terminated'] else 'closed'
+        final_status = 'closed'
         cursor.execute('''
             UPDATE interview_sessions 
             SET end_time = %s, feedback = %s, score = %s, duration = %s, status = %s
             WHERE id = %s
         ''', (
             end_time_str,
-            session.feedback,
-            session.score,
+            feedback,
+            score,
             duration,
             final_status,
             session.interview_session_id
