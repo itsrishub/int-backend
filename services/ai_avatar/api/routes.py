@@ -1,10 +1,13 @@
 """API routes for AI Avatar Service."""
 
+import asyncio
 import json
 import logging
+import time
+import uuid
 from typing import Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 
 from ..config import (
@@ -49,6 +52,12 @@ tts_service = TTSService()
 session_manager = SessionManager()
 question_service = MockQuestionService()
 avatar_service = AvatarService()
+
+# ============================================================================
+# Video Generation Cache (for async polling)
+# ============================================================================
+# Stores: {generation_id: {status, video_url, error, started_at, question_data}}
+video_generation_cache: dict[str, dict] = {}
 
 
 # ============================================================================
@@ -103,6 +112,194 @@ async def get_avatar_status():
         "mode": "video",
         "credits": credits_info,
     }
+
+
+# ============================================================================
+# Async Video Generation (Polling Pattern for Render)
+# ============================================================================
+
+async def generate_video_background(generation_id: str, text: str):
+    """Background task to generate video and update cache."""
+    try:
+        logger.info(f"Background video generation started: {generation_id}")
+        video_generation_cache[generation_id]["status"] = "processing"
+        
+        # Generate avatar video
+        avatar_result = await avatar_service.generate_avatar_video(text=text)
+        
+        if avatar_result.success and avatar_result.video_url:
+            video_generation_cache[generation_id].update({
+                "status": "completed",
+                "video_url": avatar_result.video_url,
+                "latency_ms": avatar_result.total_time_ms,
+                "completed_at": time.time(),
+            })
+            logger.info(f"Background video completed: {generation_id} -> {avatar_result.video_url}")
+        else:
+            video_generation_cache[generation_id].update({
+                "status": "failed",
+                "error": avatar_result.error_message or "Video generation failed",
+                "completed_at": time.time(),
+            })
+            logger.warning(f"Background video failed: {generation_id} -> {avatar_result.error_message}")
+    except Exception as e:
+        video_generation_cache[generation_id].update({
+            "status": "failed",
+            "error": str(e),
+            "completed_at": time.time(),
+        })
+        logger.error(f"Background video error: {generation_id} -> {e}")
+
+
+@router.post("/interview/{session_id}/question/generate")
+async def start_question_generation(session_id: str, background_tasks: BackgroundTasks):
+    """
+    Start generating the next question with avatar video (async).
+    
+    Returns immediately with:
+    - generation_id: Use to poll for status
+    - question data with audio (ready immediately)
+    - video_status: "generating"
+    
+    Client should poll /question/status/{generation_id} for video.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Check if interview is complete
+    if question_service.is_interview_complete(session_id):
+        return await get_interview_complete_response(session_id)
+    
+    # Get next question
+    question = question_service.get_next_question(session_id)
+    if question is None:
+        return await get_interview_complete_response(session_id)
+    
+    # Update session
+    session_manager.set_current_question(session_id, question.id)
+    session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
+    
+    # Generate audio immediately (fast - ~1-2 seconds)
+    logger.info(f"Generating audio for question {question.id}")
+    tts_result = await tts_service.generate_speech(question.text)
+    
+    # Get progress
+    current, total = question_service.get_progress(session_id)
+    
+    # Get idle video URL
+    idle_video_url = await avatar_service.get_cached_idle_video()
+    
+    # Create generation ID for video polling
+    generation_id = f"gen_{uuid.uuid4().hex[:12]}"
+    
+    # Determine if we should generate video
+    should_generate_video = avatar_service.is_configured
+    
+    if should_generate_video:
+        # Store in cache and start background generation
+        video_generation_cache[generation_id] = {
+            "status": "pending",
+            "session_id": session_id,
+            "question_id": question.id,
+            "started_at": time.time(),
+            "video_url": None,
+            "error": None,
+        }
+        
+        # Start background video generation
+        background_tasks.add_task(generate_video_background, generation_id, question.text)
+        video_status = "generating"
+    else:
+        video_status = "disabled"
+    
+    return {
+        "type": "question",
+        "generation_id": generation_id if should_generate_video else None,
+        "video_status": video_status,
+        "question_id": question.id,
+        "question_text": question.text,
+        "question_type": question.type.value,
+        "avatar_mode": "video" if should_generate_video else "audio_only",
+        "video_url": None,  # Will be available via polling
+        "idle_video_url": idle_video_url,
+        "audio_base64": tts_result.audio_base64,
+        "audio_duration": tts_result.duration,
+        "word_timings": [
+            {"word": wt.word, "start": wt.start, "end": wt.end}
+            for wt in tts_result.word_timings
+        ],
+        "avatar_image_url": DID_PRESENTER_IMAGE,
+        "current_question": current,
+        "total_questions": total,
+    }
+
+
+@router.get("/interview/video/status/{generation_id}")
+async def get_video_status(generation_id: str):
+    """
+    Poll for video generation status.
+    
+    Returns:
+    - status: "pending" | "processing" | "completed" | "failed"
+    - video_url: Available when status is "completed"
+    - error: Available when status is "failed"
+    - elapsed_seconds: Time since generation started
+    """
+    if generation_id not in video_generation_cache:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    
+    cache_entry = video_generation_cache[generation_id]
+    elapsed = time.time() - cache_entry["started_at"]
+    
+    response = {
+        "generation_id": generation_id,
+        "status": cache_entry["status"],
+        "elapsed_seconds": round(elapsed, 1),
+        "video_url": cache_entry.get("video_url"),
+        "error": cache_entry.get("error"),
+        "latency_ms": cache_entry.get("latency_ms"),
+    }
+    
+    # Add estimated time remaining for pending/processing
+    if cache_entry["status"] in ("pending", "processing"):
+        # D-ID typically takes 60-90 seconds
+        estimated_remaining = max(0, 75 - elapsed)
+        response["estimated_remaining_seconds"] = round(estimated_remaining, 0)
+    
+    return response
+
+
+@router.post("/interview/{session_id}/answer/async")
+async def submit_answer_async(session_id: str, answer: dict, background_tasks: BackgroundTasks):
+    """
+    Submit answer and start generating next question (async).
+    
+    Same as /answer but returns immediately with generation_id.
+    Client should poll for video status.
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    question_id = answer.get("question_id")
+    answer_text = answer.get("answer_text", "")
+    
+    if question_id is None:
+        raise HTTPException(status_code=400, detail="question_id is required")
+    
+    # Record the answer
+    session_manager.record_answer(session_id, question_id, answer_text)
+    session_manager.update_session_state(session_id, SessionState.PROCESSING)
+    
+    logger.info(f"Async: Recorded answer for question {question_id}")
+    
+    # Check if interview is complete
+    if question_service.is_interview_complete(session_id):
+        return await get_interview_complete_response(session_id)
+    
+    # Start generating next question (same as /question/generate)
+    return await start_question_generation(session_id, background_tasks)
 
 
 # ============================================================================
