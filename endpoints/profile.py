@@ -18,16 +18,27 @@ def get_profile(user_id: str):
     cursor.execute("SELECT AVG(score) as avg_score FROM interview_sessions WHERE user_id = %s", (user_id,))
     avg_score = cursor.fetchone()['avg_score']
 
-    cursor.execute("SELECT resume_blob FROM resumes WHERE user_id = %s", (user_id,))
-    resume = cursor.fetchone()['resume_blob']
+    resume_data = cursor.fetchone()
+    resume_blob = resume_data['resume_blob'] if resume_data else None
+    
     conn.close()
     
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+        
+    resume_b64 = None
+    if resume_blob:
+        import base64
+        # Handle memoryview or bytes
+        if isinstance(resume_blob, memoryview):
+            resume_bytes = bytes(resume_blob)
+        else:
+            resume_bytes = resume_blob
+        resume_b64 = base64.b64encode(resume_bytes).decode('utf-8')
     
     return {
         "user": dict(user),
-        "resume": dict(resume),
+        "resume": resume_b64,
         "total_sessions": total_sessions,
         "best_score": avg_score,
         "avg_score": avg_score
