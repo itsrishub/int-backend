@@ -42,6 +42,7 @@ def start_interview_session(session: StartInterviewSession):
             "success": True,
             "message": "Interview session created successfully",
             "id": interview_session_id,
+            "interview_type": session.interview_type
         }
     except Exception as e:
         conn.rollback()
