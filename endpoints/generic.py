@@ -104,18 +104,3 @@ def end_interview_session(session: EndInterviewSession):
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
-
-
-@router.get("/{user_id}")
-def get_user(user_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return dict(user)

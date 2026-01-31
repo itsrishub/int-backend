@@ -3,6 +3,7 @@ import os
 
 # Use /tmp for Vercel serverless (writable but temporary)
 DATABASE_NAME = "/tmp/interview_ai.db"
+# DATABASE_NAME = "interview_ai.db"
 
 
 def get_db_connection():

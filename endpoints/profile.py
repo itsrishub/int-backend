@@ -17,3 +17,18 @@ def get_profile(user_id: int):
         raise HTTPException(status_code=404, detail="User not found")
     
     return dict(user)
+
+
+@router.get("/{email}")
+def get_user(email: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+    email = cursor.fetchone()
+    conn.close()
+    
+    if email is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return dict(user)
