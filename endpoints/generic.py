@@ -242,7 +242,7 @@ def get_home_data(user_id: str):
                 "attempted_date": row['created_at'].isoformat(),
                 "company_name": row['company'] or "Practice",
                 "context": [row['role'] or "General", f"{row['experience_level'] or 0} YOE"],
-                "round_type": row['interview_type'] or "full_round"
+                "round_type": row['interview_type']
             })
             
         # Get active session ID if any
