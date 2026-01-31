@@ -33,6 +33,7 @@ def init_db():
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
+            some_id SERIAL PRIMARY KEY,
             id TEXT,
             profile_photo TEXT,
             full_name TEXT NOT NULL,
