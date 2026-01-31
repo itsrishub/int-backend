@@ -1,21 +1,23 @@
-from flask import Flask
-from endpoints import hello, nothello
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from database import init_db
+from endpoints import signup_router, profile_router
 
 
-app = Flask(__name__)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize database on startup
+    init_db()
+    yield
 
 
-app.register_blueprint(hello)
-app.register_blueprint(nothello)
+app = FastAPI(lifespan=lifespan)
+
+# Include routers
+app.include_router(signup_router)
+app.include_router(profile_router)
 
 
 @app.get("/")
 def read_root():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <body>
-        <h1>hello</h1>
-    </body>
-    </html>
-    """
+    return {"message": "Hello from Interview AI API"}

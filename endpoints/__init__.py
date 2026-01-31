@@ -1,4 +1,2 @@
-from .hello import hello
-from .nothello import nothello
-
-__all__ = ["hello", "nothello"]
+from .signup import router as signup_router
+from .profile import router as profile_router
