@@ -371,7 +371,6 @@ Interview Transcript:
 Please provide a comprehensive evaluation in the following JSON format ONLY:
 {{
     "score": <integer 0-100 overall score>,
-    "feedback": "<detailed summary feedback (1 paragraphs)>",
     "strengths": ["<strength1>", "<strength2>", "<strength3>"],
     "area_of_improvement": ["<area1>", "<area2>", "<area3>"]
 }}
@@ -395,7 +394,6 @@ Respond with ONLY the valid JSON, no markdown formatting or extra text.
             # Ensure all keys exist
             return {
                 "score": result.get("score", 0),
-                "feedback": result.get("feedback", "No feedback generated."),
                 "strengths": result.get("strengths", []),
                 "area_of_improvement": result.get("area_of_improvement", [])
             }
@@ -403,7 +401,6 @@ Respond with ONLY the valid JSON, no markdown formatting or extra text.
             print(f"Failed to parse AI response: {ai_response}")
             return {
                 "score": 0,
-                "feedback": "Failed to generate structured feedback. Please check the individual responses.",
                 "strengths": [],
                 "area_of_improvement": []
             }
@@ -412,7 +409,6 @@ Respond with ONLY the valid JSON, no markdown formatting or extra text.
         print(f"Error in analyze_interview_performance: {e}")
         return {
             "score": 0,
-            "feedback": "An error occurred during verification.",
             "strengths": [],
             "area_of_improvement": []
         }

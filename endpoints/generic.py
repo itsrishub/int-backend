@@ -163,7 +163,7 @@ def end_interview_session(session: EndInterviewSession):
         analysis_result = analyze_interview_performance(history, context)
         
         score = analysis_result["score"]
-        feedback = analysis_result["feedback"]
+        # feedback = analysis_result["feedback"]
         strengths = json.dumps(analysis_result["strengths"])
         area_of_improvement = json.dumps(analysis_result["area_of_improvement"])
         
@@ -171,11 +171,10 @@ def end_interview_session(session: EndInterviewSession):
         final_status = 'closed'
         cursor.execute('''
             UPDATE interview_sessions 
-            SET end_time = %s, feedback = %s, score = %s, duration = %s, status = %s, strengths = %s, area_of_improvement = %s
+            SET end_time = %s, score = %s, duration = %s, status = %s, strengths = %s, area_of_improvement = %s
             WHERE id = %s
         ''', (
             end_time_str,
-            feedback,
             score,
             duration,
             final_status,
