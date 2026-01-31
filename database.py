@@ -19,13 +19,18 @@ def get_db_connection():
     """Get a connection to the PostgreSQL database."""
     if DATABASE_URL:
         conn = psycopg2.connect(DATABASE_URL)
-    else:
+    elif DB_HOST and DB_USER and DB_PASSWORD:
         conn = psycopg2.connect(
             host=DB_HOST,
             port=DB_PORT,
             dbname=DB_NAME,
             user=DB_USER,
             password=DB_PASSWORD
+        )
+    else:
+        raise RuntimeError(
+            "Missing Supabase database credentials. "
+            "Please set SUPABASE_DATABASE_URL or (SUPABASE_DB_HOST, SUPABASE_DB_USER, SUPABASE_DB_PASSWORD) in environment variables."
         )
     return conn
 
