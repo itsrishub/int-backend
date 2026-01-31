@@ -12,11 +12,17 @@ def get_profile(user_id: str):
     cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
     user = cursor.fetchone()
     conn.close()
+
+    cursor.execute("""
+            SELECT COUNT(*) as count FROM interview_sessions 
+            WHERE user_id = %s'
+        """, (user_id,))
+    total_sessions = cursor.fetchone()['count']
     
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     
-    return dict(user)
+    return dict(user, total_sessions=total_sessions)
 
 
 @router.get("/email/{email}")
