@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify
 
 
-hello = Blueprint("api", __name__)
+hello = Blueprint("hello_api", __name__)
 
 
 @hello.get("/api/data")

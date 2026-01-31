@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify
 
 
-nothello = Blueprint("api", __name__)
+nothello = Blueprint("nothello_api", __name__)
 
 
 @nothello.get("/api/haha")
