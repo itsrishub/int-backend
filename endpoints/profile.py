@@ -5,7 +5,7 @@ router = APIRouter(prefix="/api/profile", tags=["Profile"])
 
 
 @router.get("/{user_id}")
-def get_profile(user_id: int):
+def get_profile(user_id: str):
     conn = get_db_connection()
     cursor = get_db_cursor(conn)
     

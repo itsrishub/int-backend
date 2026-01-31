@@ -33,7 +33,7 @@ def init_db():
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
+            id TEXT,
             profile_photo TEXT,
             full_name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
@@ -47,7 +47,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS interview_sessions (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER,
+            user_id TEXT,
             role TEXT,
             experience_level TEXT,
             interview_type TEXT,
@@ -78,7 +78,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS resumes (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER,
+            user_id TEXT,
             resume_blob BYTEA,
             ats_score INTEGER,
             feedback TEXT,

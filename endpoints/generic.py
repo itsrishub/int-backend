@@ -169,7 +169,7 @@ def end_interview_session(session: EndInterviewSession):
         conn.close()
 
 @router.get("/home/{user_id}")
-def get_home_data(user_id: int):
+def get_home_data(user_id: str):
     conn = get_db_connection()
     cursor = get_db_cursor(conn)
     

@@ -8,6 +8,7 @@ router = APIRouter(prefix="/api/signup", tags=["Signup"])
 
 
 class UserSignup(BaseModel):
+    user_id: Optional[str] = None
     profile_photo: Optional[str] = None  # base64 string
     full_name: str
     email: str
@@ -25,10 +26,11 @@ def create_user(user: UserSignup):
     try:
         # Insert into users table
         cursor.execute('''
-            INSERT INTO users (profile_photo, full_name, email, primary_role, year_of_exp, rank)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO users (id, profile_photo, full_name, email, primary_role, year_of_exp, rank)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
+            user.user_id,
             user.profile_photo,
             user.full_name,
             user.email,
@@ -66,7 +68,7 @@ def create_user(user: UserSignup):
 
 
 @router.get("/{user_id}")
-def get_user(user_id: int):
+def get_user(user_id: str):
     conn = get_db_connection()
     cursor = get_db_cursor(conn)
     

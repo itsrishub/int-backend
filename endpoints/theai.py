@@ -36,7 +36,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 
 @router.get("/resume/{user_id}")
-def analyze_resume(user_id: int):
+def analyze_resume(user_id: str):
     conn = get_db_connection()
     cursor = get_db_cursor(conn)
     
