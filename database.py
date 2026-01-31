@@ -9,7 +9,7 @@ load_dotenv()
 # DATABASE_URL = os.getenv("SUPABASE_DATABASE_URL")
 # Or use individual credentials:
 DB_HOST = os.getenv("SUPABASE_DB_HOST")
-DB_PORT = "5432"
+DB_PORT = "6543"  # Use Supabase connection pooler for serverless (transaction mode)
 DB_NAME = "postgres"
 DB_USER = "postgres"
 DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
