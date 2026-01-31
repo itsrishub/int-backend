@@ -77,7 +77,7 @@ Respond with ONLY the JSON, no additional text."""
 
     try:
         response = client.chat.completions.create(
-            model=MODEL,
+            model="deepseek-v3",
             messages=[{"role": "user", "content": prompt}],
             web_search=False
         )
