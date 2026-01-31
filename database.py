@@ -23,8 +23,8 @@ def init_db():
             profile_photo TEXT,
             full_name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            primary_role TEXT,
-            year_of_exp INTEGER,
+            primary_role TEXT NOT NULL,
+            year_of_exp INTEGER NOT NULL,
             rank INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
