@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException
-from g4f.client import Client
 from pydantic import BaseModel
 from database import get_db_connection, get_db_cursor
 import base64
 import json
 import os
+
+# Set writable directory for g4f cache (Vercel only allows /tmp)
+os.environ["HOME"] = "/tmp"
+
+from g4f.client import Client
 
 router = APIRouter(prefix="/api/theai", tags=["AI"])
 
