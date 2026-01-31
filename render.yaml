@@ -1,0 +1,30 @@
+# Render Blueprint - Deploy InterviewAI Backend
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: interviewai-backend
+    runtime: python
+    region: oregon  # or singapore, frankfurt, ohio
+    plan: free      # Free tier (sleeps after 15 min inactivity)
+    
+    # Build settings
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    
+    # Environment variables
+    envVars:
+      - key: DID_API_KEY
+        sync: false  # Set manually in Render dashboard (secret)
+      - key: AVATAR_MODE
+        value: video
+      - key: DEBUG
+        value: false
+      - key: PYTHON_VERSION
+        value: "3.11"
+    
+    # Health check
+    healthCheckPath: /api/v1/health
+    
+    # Auto-deploy on push
+    autoDeploy: true

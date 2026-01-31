@@ -1,0 +1,162 @@
+{
+  "info": {
+    "name": "InterviewAI - AI Avatar Service",
+    "description": "API collection for testing the InterviewAI AI Avatar backend service.\n\n## Features\n- Health check endpoints\n- Interview info and avatar status\n- WebSocket-based interview sessions\n- D-ID avatar video generation\n\n## Setup\n1. Set the `base_url` variable to your deployment URL\n2. Set `DID_API_KEY` if testing avatar status",
+    "_postman_id": "interview-ai-avatar-service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "ws_url",
+      "value": "ws://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Status",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Check if the service is running and healthy."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"healthy\",\n  \"service\": \"ai-avatar-service\",\n  \"version\": \"v1\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Avatar Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/avatar/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "avatar", "status"]
+            },
+            "description": "Get D-ID avatar service status and remaining credits."
+          },
+          "response": [
+            {
+              "name": "Configured",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"configured\": true,\n  \"mode\": \"video\",\n  \"credits\": {\n    \"remaining\": 12,\n    \"total\": 20\n  }\n}"
+            },
+            {
+              "name": "Not Configured",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"configured\": false,\n  \"mode\": \"audio_only\",\n  \"message\": \"D-ID API key not configured. Set DID_API_KEY environment variable.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Interview Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "info"]
+            },
+            "description": "Get information about the interview format, including total questions, types, and avatar configuration."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"total_questions\": 10,\n  \"question_types\": [\"introduction\", \"behavioral\", \"situational\", \"technical\", \"closing\"],\n  \"estimated_duration_minutes\": 15,\n  \"avatar_mode\": \"video\",\n  \"avatar_image_url\": \"https://clips-presenters.d-id.com/v2/Amber/...\",\n  \"presenter_id\": \"v2_public_Amber@0zSz8kflCN\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Available Voices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/voices",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "voices"]
+            },
+            "description": "Get list of available TTS voices for the avatar."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "WebSocket Interview",
+      "item": [
+        {
+          "name": "Interview Session (WebSocket)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{ws_url}}/api/v1/interview/session",
+              "host": ["{{ws_url}}"],
+              "path": ["api", "v1", "interview", "session"]
+            },
+            "description": "WebSocket endpoint for interview sessions.\n\n## Protocol\n\n### 1. Connect\nConnect to `ws://host/api/v1/interview/session`\n\n### 2. Receive Session Info\n```json\n{\n  \"type\": \"session_info\",\n  \"data\": {\n    \"session_id\": \"session_xxx\",\n    \"state\": \"created\",\n    \"total_questions\": 10,\n    \"avatar_mode\": \"video\",\n    \"avatar_image_url\": \"https://...\"\n  }\n}\n```\n\n### 3. Start Interview\nSend:\n```json\n{\"type\": \"start\"}\n```\n\n### 4. Receive Question\n```json\n{\n  \"type\": \"question\",\n  \"data\": {\n    \"question_id\": 1,\n    \"question_text\": \"Tell me about yourself...\",\n    \"question_type\": \"introduction\",\n    \"avatar_mode\": \"video\",\n    \"video_url\": \"https://d-id-clips-prod.s3...\",\n    \"idle_video_url\": \"https://clips-presenters.d-id.com/...\",\n    \"audio_base64\": \"...\",\n    \"audio_duration\": 10.5,\n    \"current_question\": 1,\n    \"total_questions\": 10,\n    \"latency_ms\": 45000\n  }\n}\n```\n\n### 5. Send Answer\n```json\n{\n  \"type\": \"answer\",\n  \"data\": {\n    \"question_id\": 1,\n    \"answer_text\": \"My name is...\"\n  }\n}\n```\n\n### 6. Repeat until Complete\n```json\n{\n  \"type\": \"complete\",\n  \"data\": {\n    \"message\": \"Interview completed!\",\n    \"questions_answered\": 10\n  }\n}\n```\n\n### 7. End Session (optional)\nSend:\n```json\n{\"type\": \"end\"}\n```"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "OpenAPI Docs",
+      "item": [
+        {
+          "name": "Swagger UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/docs",
+              "host": ["{{base_url}}"],
+              "path": ["docs"]
+            },
+            "description": "Interactive API documentation (Swagger UI)"
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI JSON",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/openapi.json",
+              "host": ["{{base_url}}"],
+              "path": ["openapi.json"]
+            },
+            "description": "OpenAPI specification in JSON format"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
