@@ -49,7 +49,7 @@ def analyze_resume(analyze_resume: AnalyzeResume):
 
     resume_blob = None
     if analyze_resume.resume_id is not None:
-        cursor.execute("SELECT id, resume_blob FROM resumes WHERE resume_id = %s", (analyze_resume.resume_id,))
+        cursor.execute("SELECT id, resume_blob FROM resumes WHERE id = %s", (analyze_resume.resume_id,))
         resume = cursor.fetchone()
         if resume is None:
             conn.close()
