@@ -1,0 +1,344 @@
+{
+  "info": {
+    "name": "InterviewAI - AI Avatar Service",
+    "description": "API collection for testing the InterviewAI AI Avatar backend service.\n\n## Features\n- Health check endpoints\n- Interview info and avatar status\n- HTTP-based interview sessions (Render compatible)\n- Async video generation with polling\n- **Real Question Generation API Integration** (http://43.205.96.118)\n\n## Interview Flow (Async - Recommended)\n1. POST /interview/start → Get session_id + first question (with word_timings)\n2. GET /interview/video/status/{generation_id} → Poll until video ready\n3. POST /interview/{session_id}/answer/async → Submit answer, get next question (without word_timings)\n4. Repeat steps 2-3 until complete\n5. POST /interview/{session_id} → End interview with optional end_time and get feedback\n\n## Real API Integration\n- Questions are fetched from: http://43.205.96.118/api/theai/gen_ques/{session_id}\n- Answers are submitted to: http://43.205.96.118/api/theai/send_ans/\n- Interview sessions managed via: http://43.205.96.118/api/generic/start_interview_session",
+    "_postman_id": "interview-ai-avatar-service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "generation_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Status",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Check if the service is running and healthy."
+          },
+          "response": []
+        },
+        {
+          "name": "Avatar Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/avatar/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "avatar", "status"]
+            },
+            "description": "Get D-ID avatar service status and remaining credits."
+          },
+          "response": []
+        },
+        {
+          "name": "Interview Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "info"]
+            },
+            "description": "Get information about the interview format."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Async Interview Flow (Recommended)",
+      "description": "Use these endpoints for production. Video generation happens in background, client polls for status. Questions are fetched from the real question generation API.",
+      "item": [
+        {
+          "name": "1. Start Interview (Returns First Question)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('session_id', jsonData.session_id);",
+                  "if (jsonData.generation_id) {",
+                  "  pm.collectionVariables.set('generation_id', jsonData.generation_id);",
+                  "}",
+                  "if (jsonData.question_id) {",
+                  "  pm.collectionVariables.set('current_question_id', jsonData.question_id);",
+                  "}",
+                  "console.log('Session ID:', jsonData.session_id);",
+                  "console.log('Generation ID:', jsonData.generation_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"test_user_123\",\n  \"start_time\": \"2026-01-31T19:00:00\",\n  \"resume_blob\": \"\",\n  \"role\": \"Software Engineer\",\n  \"company\": \"Tech Corp\",\n  \"experience\": 5,\n  \"job_description\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/start",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "start"]
+            },
+            "description": "Start a new interview session and get the first question.\n\n**Merged Endpoint**: This combines session creation and first question generation.\n\n**Calls real API**: http://43.205.96.118/api/generic/start_interview_session\n**Fetches first question**: http://43.205.96.118/api/theai/gen_ques/{session_id}\n\n**Request Body (Optional)**:\n- `user_id`: User identifier (default: \"default_user\")\n- `start_time`: ISO 8601 timestamp (default: current time)\n- `resume_blob`: Resume data as string\n- `role`: Target role\n- `company`: Target company\n- `experience`: Years of experience\n- `job_description`: Job description\n\n**Response includes**:\n- `session_id`: Internal session ID (use for subsequent requests)\n- `type`: \"question\"\n- `generation_id`: Use to poll for video status\n- `video_status`: \"generating\" or \"disabled\"\n- `question_id`: First question ID from real API\n- `question_text`: First question text from real API\n- `audio_base64`: Base64 encoded MP3 audio\n- `audio_duration`: Audio duration in seconds\n- `word_timings`: Word-level timings with visemes (included for first question only)\n- `avatar_mode`: \"video\" or \"audio_only\"\n- `avatar_image_url`: Avatar image URL\n- `idle_video_url`: Idle video URL for transitions"
+          },
+          "response": [
+            {
+              "name": "Success - First Question",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"session_id\": \"session_abc123\",\n  \"state\": \"in_progress\",\n  \"type\": \"question\",\n  \"generation_id\": \"gen_abc123\",\n  \"video_status\": \"generating\",\n  \"question_id\": 1,\n  \"question_text\": \"Tell me about yourself and your professional background.\",\n  \"question_type\": \"introduction\",\n  \"avatar_mode\": \"video\",\n  \"video_url\": null,\n  \"idle_video_url\": \"https://clips-presenters.d-id.com/.../idle.mp4\",\n  \"audio_base64\": \"//uQxAAA...\",\n  \"audio_duration\": 10.5,\n  \"word_timings\": [\n    {\n      \"word\": \"Tell\",\n      \"start\": 0.0,\n      \"end\": 0.3,\n      \"viseme\": \"T\"\n    },\n    {\n      \"word\": \"me\",\n      \"start\": 0.3,\n      \"end\": 0.5,\n      \"viseme\": \"M\"\n    }\n  ],\n  \"avatar_image_url\": \"https://create-images-results.d-id.com/DefaultPresenters/Amber_f/image.png\",\n  \"current_question\": 1,\n  \"total_questions\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. Poll Video Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/video/status/{{generation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "video", "status", "{{generation_id}}"]
+            },
+            "description": "Poll for video generation status.\n\n**D-ID Video Generation**:\n- Video generation takes 60-90 seconds\n- Poll every 5-10 seconds until status is 'completed'\n\n**Status values**:\n- `pending`: Not started yet\n- `processing`: D-ID is generating video\n- `completed`: video_url available\n- `failed`: Check error field for details\n\n**Response includes**:\n- `status`: Current generation status\n- `elapsed_seconds`: Time since generation started\n- `video_url`: Available when status is 'completed'\n- `latency_ms`: Total generation time in milliseconds\n- `error`: Error message if status is 'failed'"
+          },
+          "response": [
+            {
+              "name": "Processing",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"generation_id\": \"gen_abc123\",\n  \"status\": \"processing\",\n  \"elapsed_seconds\": 25.5,\n  \"estimated_remaining_seconds\": 50,\n  \"video_url\": null,\n  \"error\": null\n}"
+            },
+            {
+              "name": "Completed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"generation_id\": \"gen_abc123\",\n  \"status\": \"completed\",\n  \"elapsed_seconds\": 75.2,\n  \"video_url\": \"https://d-id-clips-prod.s3.us-west-2.amazonaws.com/...\",\n  \"latency_ms\": 75200,\n  \"error\": null\n}"
+            },
+            {
+              "name": "Failed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"generation_id\": \"gen_abc123\",\n  \"status\": \"failed\",\n  \"elapsed_seconds\": 120.0,\n  \"video_url\": null,\n  \"error\": \"D-ID API error: Insufficient credits\",\n  \"latency_ms\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Submit Answer (Async)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.generation_id) {",
+                  "  pm.collectionVariables.set('generation_id', jsonData.generation_id);",
+                  "  console.log('Next Generation ID:', jsonData.generation_id);",
+                  "}",
+                  "if (jsonData.question_id) {",
+                  "  pm.collectionVariables.set('current_question_id', jsonData.question_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_id\": 1,\n  \"answer_text\": \"My name is John and I have 5 years of experience in software development. I specialize in backend systems and have worked with Python, FastAPI, and cloud technologies.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/{{session_id}}/answer/async",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "{{session_id}}", "answer", "async"]
+            },
+            "description": "Submit answer and start generating next question.\n\n**Submits to real API**: http://43.205.96.118/api/theai/send_ans/\n**Fetches next question**: http://43.205.96.118/api/theai/gen_ques/{session_id}\n\n**Request Body**:\n- `question_id`: ID of the question being answered (from previous response)\n- `answer_text`: User's answer text\n\n**Response**:\nReturns immediately with next question's:\n- Audio (ready to play)\n- generation_id (for video polling)\n- Question text from real API\n- **Note**: word_timings are NOT included in submit answer responses\n\n**Note**: The real API uses the answer to generate contextual follow-up questions."
+          },
+          "response": [
+            {
+              "name": "Success - Next Question (No word_timings)",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"type\": \"question\",\n  \"generation_id\": \"gen_xyz789\",\n  \"video_status\": \"generating\",\n  \"question_id\": 2,\n  \"question_text\": \"Can you tell me about a challenging project you worked on?\",\n  \"question_type\": \"behavioral\",\n  \"avatar_mode\": \"video\",\n  \"audio_base64\": \"//uQxAAA...\",\n  \"audio_duration\": 8.2,\n  \"idle_video_url\": \"https://clips-presenters.d-id.com/.../idle.mp4\",\n  \"avatar_image_url\": \"https://create-images-results.d-id.com/DefaultPresenters/Amber_f/image.png\",\n  \"video_url\": null,\n  \"current_question\": 2,\n  \"total_questions\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. Get Session Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/{{session_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "{{session_id}}", "status"]
+            },
+            "description": "Get current session status and progress.\n\n**Response includes**:\n- `session_id`: Session identifier\n- `state`: Current session state\n- `current_question`: Current question number\n- `total_questions`: Total questions (0 if unknown from real API)\n- `is_complete`: Whether interview is complete\n- `answers_recorded`: Number of answers submitted"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"session_id\": \"session_abc123\",\n  \"state\": \"waiting_for_answer\",\n  \"current_question\": 2,\n  \"total_questions\": 0,\n  \"is_complete\": false,\n  \"answers_recorded\": 1\n}"
+            }
+          ]
+        },
+        {
+          "name": "5. End Interview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"end_time\": \"2026-01-31T20:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "{{session_id}}"]
+            },
+            "description": "End interview session and get feedback.\n\n**Calls real API**: http://43.205.96.118/api/generic/end_interview_session\n\n**Request Body (Optional)**:\n- `end_time`: ISO 8601 format timestamp (e.g., \"2026-01-31T20:00:00\"). If not provided, defaults to current time.\n\n**Response includes feedback from real API**:\n- `success`: Whether session ended successfully\n- `message`: Status message\n- `feedback`: Interview feedback object with:\n  - `id`: Interview session ID\n  - `target_role`: Target role\n  - `duration`: Interview duration\n  - `area_of_improvement`: Areas to improve\n  - `strength`: Candidate strengths\n  - `score`: Interview score\n  - `status`: Final status\n\n**Note**: This endpoint ends the session with the real API and returns comprehensive feedback."
+          },
+          "response": [
+            {
+              "name": "Success with Feedback",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"message\": \"Session ended successfully\",\n  \"session_id\": \"session_abc123\",\n  \"summary\": {\n    \"questions_answered\": 5,\n    \"session_duration\": \"15m 30s\"\n  },\n  \"feedback\": {\n    \"success\": true,\n    \"message\": \"Interview session ended successfully\",\n    \"id\": 3,\n    \"target_role\": \"Software Engineer\",\n    \"duration\": \"15m 30s\",\n    \"area_of_improvement\": \"Could improve on system design concepts\",\n    \"strength\": \"Strong technical skills and problem-solving ability\",\n    \"score\": 85.5,\n    \"status\": \"completed\"\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sync Interview Flow (Local Only)",
+      "description": "These endpoints wait for video generation. May timeout on Render (30s limit). Use async endpoints for production.",
+      "item": [
+        {
+          "name": "Get Question (Sync - May Timeout)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/{{session_id}}/question",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "{{session_id}}", "question"]
+            },
+            "description": "⚠️ WARNING: May timeout on Render (30s limit).\n\n**Fetches question from real API** and waits for video generation (60-90s).\n\nUse async endpoints (`/interview/start` + polling) instead for production.\n\n**Response**: Same as `/interview/start` but includes `video_url` if generation completed."
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Answer (Sync - May Timeout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_id\": 1,\n  \"answer_text\": \"My answer...\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/interview/{{session_id}}/answer",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "interview", "{{session_id}}", "answer"]
+            },
+            "description": "⚠️ WARNING: May timeout on Render.\n\n**Submits answer to real API** and waits for next question's video generation.\n\n**Note**: word_timings are NOT included in the response.\n\nUse `/answer/async` instead for production."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "OpenAPI Docs",
+      "item": [
+        {
+          "name": "Swagger UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/docs",
+              "host": ["{{base_url}}"],
+              "path": ["docs"]
+            },
+            "description": "OpenAPI/Swagger documentation for all endpoints."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
