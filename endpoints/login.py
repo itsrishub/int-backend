@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-import base64
 from database import get_db_connection, get_db_cursor
 
 router = APIRouter(prefix="/api/login", tags=["Login"])
