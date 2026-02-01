@@ -18,6 +18,12 @@ class AnswerQuestion(BaseModel):
     question_id: int
     answer: str
 
+class AnalyzeResume(BaseModel):
+    resume_id: Optional[int] = None
+    user_id: Optional[str] = None
+    resume_name: Optional[str] = None
+    resume_blob: Optional[str] = None
+
 
 def generate_content(prompt: str) -> str:
     """Generate content using Gemini API."""
@@ -35,21 +41,23 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     return text.strip()
 
 
-@router.get("/resume/{user_id}")
-def analyze_resume(user_id: str):
+@router.post("/resume/")
+def analyze_resume(analyze_resume: AnalyzeResume):
     conn = get_db_connection()
     cursor = get_db_cursor(conn)
+
+    resume_blob = None
+    if analyze_resume.resume_id is not None:
+        cursor.execute("SELECT id, resume_blob FROM resumes WHERE resume_id = %s", (analyze_resume.resume_id,))
+        resume = cursor.fetchone()
+        if resume is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Resume not found for this user")
+        resume_blob = resume["resume_blob"]
+    else:
+        cursor.execute("INSERT INTO resumes (user_id, resume_name, resume_blob) VALUES (%s, %s, %s)", (user_id, analyze_resume.resume_name, analyze_resume.resume_blob))
+        resume_blob = analyze_resume.resume_blob
     
-    # Get resume blob for the user
-    cursor.execute("SELECT id, resume_blob FROM resumes WHERE user_id = %s ORDER BY created_at DESC LIMIT 1", (user_id,))
-    resume = cursor.fetchone()
-    
-    if resume is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Resume not found for this user")
-    
-    resume_id = resume["id"]
-    resume_blob = resume["resume_blob"]
     
     if not resume_blob:
         conn.close()
@@ -133,14 +141,17 @@ Respond with ONLY the JSON, no additional text."""
         
         return {
             "success": True,
-            "user_id": user_id,
-            "resume_id": resume_id,
+            "resume_id": analyze_resume.resume_id,
             **result
         }
         
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+# @router.get("/resume/{resume_id}")
+# def analyze_resume_with_id(resume_id: int):
 
 
 @router.get("/gen_ques/{interview_session_id}")
