@@ -76,12 +76,11 @@ def analyze_resume(analyze_resume: AnalyzeResume):
             raise HTTPException(status_code=400, detail="Could not extract text from resume PDF")
     else:
         import base64
-        resume_blob = base64.b64decode(analyze_resume.resume_blob)
+        if isinstance(resume_blob, str):
+            resume_blob = resume_blob.encode("utf-8")
+
+        resume_blob = base64.b64decode(resume_blob)
         cursor.execute("INSERT INTO resumes (user_id, resume_name, resume_blob) VALUES (%s, %s, %s)", (analyze_resume.user_id, analyze_resume.resume_name, resume_blob))
-        
-        if not resume_blob:
-            conn.close()
-            raise HTTPException(status_code=400, detail="Resume is empty")
         
         # if isinstance(resume_blob, memoryview):
         #     resume_bytes = bytes(resume_blob)
