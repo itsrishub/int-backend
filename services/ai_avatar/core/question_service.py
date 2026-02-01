@@ -65,9 +65,11 @@ class QuestionService:
         self._questions_asked: dict[str, int] = {}
     
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create HTTP session."""
+        """Get or create HTTP session with timeout configuration."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            # Configure timeout for external API calls
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)  # 30s total, 10s connect
+            self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
     
     async def start_session(
@@ -135,9 +137,19 @@ class QuestionService:
                         raise Exception(f"API returned success=false: {data.get('message', 'Unknown error')}")
                 else:
                     error_text = await response.text()
+                    logger.error(
+                        f"Start session API error {response.status}: {error_text}\n"
+                        f"URL: {self.base_url}/api/generic/start_interview_session"
+                    )
                     raise Exception(f"API error {response.status}: {error_text}")
+        except aiohttp.ClientError as e:
+            logger.error(
+                f"Network error connecting to question service: {type(e).__name__}: {e}\n"
+                f"Base URL: {self.base_url}"
+            )
+            raise Exception(f"Network error: {str(e)}")
         except Exception as e:
-            logger.error(f"Failed to start interview session: {e}")
+            logger.error(f"Failed to start interview session: {type(e).__name__}: {e}")
             raise
     
     def get_real_session_id(self, session_id: str) -> Optional[int]:
@@ -167,9 +179,9 @@ class QuestionService:
         
         try:
             session = await self._get_session()
-            async with session.get(
-                f"{self.base_url}/api/theai/gen_ques/{real_session_id}"
-            ) as response:
+            url = f"{self.base_url}/api/theai/gen_ques/{real_session_id}"
+            logger.info(f"Fetching question from: {url}")
+            async with session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
                     if data.get("success"):
@@ -200,10 +212,20 @@ class QuestionService:
                     return None
                 else:
                     error_text = await response.text()
-                    logger.error(f"API error {response.status}: {error_text}")
+                    logger.error(
+                        f"Question API error {response.status} for session {real_session_id}: {error_text}\n"
+                        f"URL: {self.base_url}/api/theai/gen_ques/{real_session_id}"
+                    )
                     raise Exception(f"API error {response.status}: {error_text}")
+        except aiohttp.ClientError as e:
+            logger.error(
+                f"Network error connecting to question service: {type(e).__name__}: {e}\n"
+                f"Base URL: {self.base_url}\n"
+                f"Session ID: {real_session_id}"
+            )
+            raise Exception(f"Network error: {str(e)}")
         except Exception as e:
-            logger.error(f"Failed to get question: {e}")
+            logger.error(f"Failed to get question: {type(e).__name__}: {e}")
             raise
     
     async def submit_answer(
@@ -230,8 +252,10 @@ class QuestionService:
         
         try:
             session = await self._get_session()
+            url = f"{self.base_url}/api/theai/send_ans/"
+            logger.info(f"Submitting answer to: {url}")
             async with session.post(
-                f"{self.base_url}/api/theai/send_ans/",
+                url,
                 json=request_data,
                 headers={"Content-Type": "application/json"}
             ) as response:
@@ -245,10 +269,20 @@ class QuestionService:
                         return False
                 else:
                     error_text = await response.text()
-                    logger.error(f"API error {response.status}: {error_text}")
+                    logger.error(
+                        f"Submit answer API error {response.status}: {error_text}\n"
+                        f"URL: {self.base_url}/api/theai/send_ans/\n"
+                        f"Question ID: {question_id}"
+                    )
                     return False
+        except aiohttp.ClientError as e:
+            logger.error(
+                f"Network error submitting answer: {type(e).__name__}: {e}\n"
+                f"Base URL: {self.base_url}"
+            )
+            return False
         except Exception as e:
-            logger.error(f"Failed to submit answer: {e}")
+            logger.error(f"Failed to submit answer: {type(e).__name__}: {e}")
             return False
     
     async def end_session(
@@ -303,8 +337,14 @@ class QuestionService:
                     error_text = await response.text()
                     logger.error(f"API error {response.status}: {error_text}")
                     return None
+        except aiohttp.ClientError as e:
+            logger.error(
+                f"Network error ending session: {type(e).__name__}: {e}\n"
+                f"Base URL: {self.base_url}"
+            )
+            return None
         except Exception as e:
-            logger.error(f"Failed to end session: {e}")
+            logger.error(f"Failed to end session: {type(e).__name__}: {e}")
             return None
     
     def get_question_by_id(self, question_id: int) -> Optional[InterviewQuestion]:

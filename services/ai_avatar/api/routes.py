@@ -126,7 +126,21 @@ async def generate_video_background(generation_id: str, text: str):
     """Background task to generate video and update cache."""
     try:
         logger.info(f"Background video generation started: {generation_id}")
-        video_generation_cache[generation_id]["status"] = "processing"
+        
+        # Ensure cache entry exists before updating
+        if generation_id not in video_generation_cache:
+            logger.error(f"Cache entry missing for {generation_id} at start of background task")
+            # Create a minimal entry to prevent KeyError
+            video_generation_cache[generation_id] = {
+                "status": "processing",
+                "started_at": time.time(),
+                "session_id": None,
+                "question_id": None,
+                "video_url": None,
+                "error": None,
+            }
+        else:
+            video_generation_cache[generation_id]["status"] = "processing"
         
         # Generate avatar video
         avatar_result = await avatar_service.generate_avatar_video(text=text)
@@ -146,13 +160,32 @@ async def generate_video_background(generation_id: str, text: str):
                 "completed_at": time.time(),
             })
             logger.warning(f"Background video failed: {generation_id} -> {avatar_result.error_message}")
+    except KeyError as e:
+        logger.error(f"KeyError in background video generation: {generation_id} -> {e}. Cache keys: {list(video_generation_cache.keys())}")
+        # Try to create entry if it doesn't exist
+        if generation_id not in video_generation_cache:
+            video_generation_cache[generation_id] = {
+                "status": "failed",
+                "error": f"Cache entry error: {str(e)}",
+                "started_at": time.time(),
+                "completed_at": time.time(),
+            }
     except Exception as e:
-        video_generation_cache[generation_id].update({
-            "status": "failed",
-            "error": str(e),
-            "completed_at": time.time(),
-        })
-        logger.error(f"Background video error: {generation_id} -> {e}")
+        logger.error(f"Background video error: {generation_id} -> {type(e).__name__}: {e}", exc_info=True)
+        # Ensure cache entry exists before updating
+        if generation_id not in video_generation_cache:
+            video_generation_cache[generation_id] = {
+                "status": "failed",
+                "error": str(e),
+                "started_at": time.time(),
+                "completed_at": time.time(),
+            }
+        else:
+            video_generation_cache[generation_id].update({
+                "status": "failed",
+                "error": str(e),
+                "completed_at": time.time(),
+            })
 
 
 @router.post("/interview/{session_id}/question/generate")
@@ -251,14 +284,30 @@ async def get_video_status(generation_id: str):
     - elapsed_seconds: Time since generation started
     """
     if generation_id not in video_generation_cache:
-        raise HTTPException(status_code=404, detail="Generation not found")
+        logger.warning(f"Generation ID not found in cache: {generation_id}. Cache keys: {list(video_generation_cache.keys())}")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Generation not found. Generation ID: {generation_id}. This may happen if the server restarted or the generation was never started."
+        )
     
     cache_entry = video_generation_cache[generation_id]
+    
+    # Validate cache entry structure
+    if "started_at" not in cache_entry:
+        logger.error(f"Invalid cache entry for {generation_id}: missing 'started_at'. Entry: {cache_entry}")
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid cache entry: missing timestamp"
+        )
+    
     elapsed = time.time() - cache_entry["started_at"]
+    
+    # Get status with fallback
+    status = cache_entry.get("status", "unknown")
     
     response = {
         "generation_id": generation_id,
-        "status": cache_entry["status"],
+        "status": status,
         "elapsed_seconds": round(elapsed, 1),
         "video_url": cache_entry.get("video_url"),
         "error": cache_entry.get("error"),
@@ -266,10 +315,17 @@ async def get_video_status(generation_id: str):
     }
     
     # Add estimated time remaining for pending/processing
-    if cache_entry["status"] in ("pending", "processing"):
+    if status in ("pending", "processing"):
         # D-ID typically takes 60-90 seconds
         estimated_remaining = max(0, 75 - elapsed)
         response["estimated_remaining_seconds"] = round(estimated_remaining, 0)
+    
+    # Log if generation is taking too long (potential issue)
+    if elapsed > 120 and status in ("pending", "processing"):
+        logger.warning(
+            f"Video generation taking longer than expected: {generation_id}, "
+            f"elapsed: {elapsed:.1f}s, status: {status}"
+        )
     
     return response
 
