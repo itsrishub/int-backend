@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from shared.utils import generate_session_id, get_timestamp
+from app.shared.utils import generate_session_id, get_timestamp
 
 
 class SessionState(str, Enum):

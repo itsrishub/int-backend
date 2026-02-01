@@ -11,21 +11,21 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Try to import database module (may not exist in all setups)
 try:
-    from database import init_db
+    from app.database import init_db
     HAS_DATABASE = True
 except ImportError:
     HAS_DATABASE = False
 
 # Import routers
 try:
-    from endpoints import signup_router, profile_router
+    from app.endpoints import signup_router, profile_router
     HAS_ENDPOINTS = True
 except ImportError:
     HAS_ENDPOINTS = False
 
 # Import AI Avatar service
-from services.ai_avatar.api import router as avatar_router
-from services.ai_avatar.config import API_VERSION
+from app.services.ai_avatar.api import router as avatar_router
+from app.services.ai_avatar.config import API_VERSION
 
 
 @asynccontextmanager
