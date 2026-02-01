@@ -56,7 +56,7 @@ def analyze_resume(analyze_resume: AnalyzeResume):
             raise HTTPException(status_code=404, detail="Resume not found for this user")
         resume_blob = resume["resume_blob"]
     else:
-        cursor.execute("INSERT INTO resumes (user_id, resume_name, resume_blob) VALUES (%s, %s, %s)", (user_id, analyze_resume.resume_name, analyze_resume.resume_blob))
+        cursor.execute("INSERT INTO resumes (user_id, resume_name, resume_blob) VALUES (%s, %s, %s)", (analyze_resume.user_id, analyze_resume.resume_name, analyze_resume.resume_blob))
         resume_blob = analyze_resume.resume_blob
     
     
