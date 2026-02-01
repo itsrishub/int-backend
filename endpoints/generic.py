@@ -190,6 +190,7 @@ def end_interview_session(session: EndInterviewSession):
             "id": session.interview_session_id,
             "target_role": target_role,
             "duration": duration,
+            "end_time": end_time_str,
             "area_of_improvement": analysis_result["area_of_improvement"],
             "strengths": analysis_result["strengths"],
             "score": score,
