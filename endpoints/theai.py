@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from database import get_db_connection, get_db_cursor
+from typing import Optional
 import json
 import os
 import io
