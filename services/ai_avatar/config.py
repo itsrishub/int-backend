@@ -60,6 +60,16 @@ AVATAR_IMAGE_URL = os.getenv(
 AVATAR_GENERATION_TIMEOUT = 120  # seconds (max wait for video generation)
 AVATAR_POLL_INTERVAL = 2  # seconds between status checks
 
+# Video aspect ratio (16:9, 9:16, or 1:1)
+# D-ID Clips API supports aspect ratio configuration
+AVATAR_ASPECT_RATIO = os.getenv("AVATAR_ASPECT_RATIO", "16:9")
+
+# Video resolution/quality for faster generation
+# Lower resolution = faster generation and lower cost
+# Options: "480p" (faster, lower quality), "720p" (balanced), "1080p" (slower, higher quality)
+# Default: "480p" for faster generation
+AVATAR_RESOLUTION = os.getenv("AVATAR_RESOLUTION", "480p")
+
 # Avatar mode: "video" (D-ID) or "audio_only" (fallback)
 # Set to "audio_only" if D-ID credits are exhausted
 AVATAR_MODE = os.getenv("AVATAR_MODE", "video")

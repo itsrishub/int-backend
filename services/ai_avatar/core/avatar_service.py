@@ -25,6 +25,8 @@ from ..config import (
     AVATAR_POLL_INTERVAL,
     DID_TTS_VOICE,
     IDLE_VIDEO_TEXT,
+    AVATAR_ASPECT_RATIO,
+    AVATAR_RESOLUTION,
 )
 
 logger = logging.getLogger(__name__)
@@ -257,6 +259,11 @@ class AvatarService:
             },
             "config": {
                 "result_format": "mp4",
+                "aspect_ratio": AVATAR_ASPECT_RATIO,  # Default: 16:9, configurable via env var
+                # Resolution parameter - lower resolution = faster generation
+                # Note: If D-ID API doesn't support this parameter, it will be ignored
+                # Supported values may vary - test with "480p", "720p", "1080p", or "low", "medium", "high"
+                "resolution": AVATAR_RESOLUTION,  # Default: 480p for faster generation
             },
         }
 
@@ -448,7 +455,12 @@ class AvatarService:
         return result
     
     async def get_cached_idle_video(self, presenter_id: Optional[str] = None) -> Optional[str]:
-        """Get cached idle video URL if available."""
+        """
+        Get cached idle video URL if available.
+        
+        If not cached, generates a new idle video with current resolution and aspect ratio specs.
+        This ensures the idle video matches the main video generation settings.
+        """
         presenter = presenter_id or self.presenter_id
         cache_key = f"idle_{presenter}"
         
@@ -456,8 +468,17 @@ class AvatarService:
         if cache_key in _idle_video_cache:
             return _idle_video_cache[cache_key]
         
-        # Use D-ID's built-in idle video for the default presenter (no generation needed!)
+        # Generate idle video with current resolution and aspect ratio specs
+        # This ensures consistency with main video generation
+        if self.is_configured:
+            logger.info("Generating idle video with current resolution/aspect ratio specs...")
+            result = await self.generate_idle_video(presenter_id=presenter, force_regenerate=False)
+            if result.success and result.video_url:
+                return result.video_url
+        
+        # Fallback to D-ID's built-in idle video only if generation fails
         if presenter == DID_PRESENTER_ID:
+            logger.warning("Using D-ID's default idle video (may not match resolution/aspect ratio)")
             return DID_PRESENTER_IDLE_VIDEO
         
         return None

@@ -26,7 +26,7 @@ from ..core.avatar_service import (
     DID_PRESENTER_IDLE_VIDEO,
     DID_PRESENTER_IMAGE,
 )
-from ..mock.question_service import MockQuestionService
+from ..core.question_service import QuestionService, InterviewQuestion
 from .schemas import (
     WSMessageType,
     QuestionResponse,
@@ -50,7 +50,7 @@ router = APIRouter(prefix=f"/api/{API_VERSION}", tags=["AI Avatar"])
 # Initialize services (singleton instances)
 tts_service = TTSService()
 session_manager = SessionManager()
-question_service = MockQuestionService()
+question_service = QuestionService()  # Real API integration
 avatar_service = AvatarService()
 
 # ============================================================================
@@ -171,8 +171,8 @@ async def start_question_generation(session_id: str, background_tasks: Backgroun
     if question_service.is_interview_complete(session_id):
         return await get_interview_complete_response(session_id)
     
-    # Get next question
-    question = question_service.get_next_question(session_id)
+    # Get next question from real API (async)
+    question = await question_service.get_next_question(session_id)
     if question is None:
         return await get_interview_complete_response(session_id)
     
@@ -288,7 +288,13 @@ async def submit_answer_async(session_id: str, answer: dict, background_tasks: B
     if question_id is None:
         raise HTTPException(status_code=400, detail="question_id is required")
     
-    # Record the answer
+    # Submit answer to real API
+    success = await question_service.submit_answer(session_id, question_id, answer_text)
+    if not success:
+        logger.warning(f"Failed to submit answer for question {question_id}")
+        raise HTTPException(status_code=500, detail="Failed to submit answer to question service")
+    
+    # Record the answer locally
     session_manager.record_answer(session_id, question_id, answer_text)
     session_manager.update_session_state(session_id, SessionState.PROCESSING)
     
@@ -298,8 +304,65 @@ async def submit_answer_async(session_id: str, answer: dict, background_tasks: B
     if question_service.is_interview_complete(session_id):
         return await get_interview_complete_response(session_id)
     
-    # Start generating next question (same as /question/generate)
-    return await start_question_generation(session_id, background_tasks)
+    # Get next question from real API (async)
+    question = await question_service.get_next_question(session_id, previous_answer=answer_text)
+    if question is None:
+        return await get_interview_complete_response(session_id)
+    
+    # Update session
+    session_manager.set_current_question(session_id, question.id)
+    session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
+    
+    # Generate audio immediately (fast - ~1-2 seconds)
+    logger.info(f"Generating audio for question {question.id}")
+    tts_result = await tts_service.generate_speech(question.text)
+    
+    # Get progress
+    current, total = question_service.get_progress(session_id)
+    
+    # Get idle video URL
+    idle_video_url = await avatar_service.get_cached_idle_video()
+    
+    # Create generation ID for video polling
+    generation_id = f"gen_{uuid.uuid4().hex[:12]}"
+    
+    # Determine if we should generate video
+    should_generate_video = avatar_service.is_configured
+    
+    if should_generate_video:
+        # Store in cache and start background generation
+        video_generation_cache[generation_id] = {
+            "status": "pending",
+            "session_id": session_id,
+            "question_id": question.id,
+            "started_at": time.time(),
+            "video_url": None,
+            "error": None,
+        }
+        
+        # Start background video generation
+        background_tasks.add_task(generate_video_background, generation_id, question.text)
+        video_status = "generating"
+    else:
+        video_status = "disabled"
+    
+    return {
+        "type": "question",
+        "generation_id": generation_id if should_generate_video else None,
+        "video_status": video_status,
+        "question_id": question.id,
+        "question_text": question.text,
+        "question_type": question.type.value,
+        "avatar_mode": "video" if should_generate_video else "audio_only",
+        "video_url": None,  # Will be available via polling
+        "idle_video_url": idle_video_url,
+        "audio_base64": tts_result.audio_base64,
+        "audio_duration": tts_result.duration,
+        # Note: word_timings removed from submit answer response
+        "avatar_image_url": DID_PRESENTER_IMAGE,
+        "current_question": current,
+        "total_questions": total,
+    }
 
 
 # ============================================================================
@@ -307,32 +370,125 @@ async def submit_answer_async(session_id: str, answer: dict, background_tasks: B
 # ============================================================================
 
 @router.post("/interview/start")
-async def start_interview():
+async def start_interview(request_data: Optional[dict] = None, background_tasks: BackgroundTasks = BackgroundTasks()):
     """
-    Start a new interview session.
+    Start a new interview session and get the first question.
     
-    Returns session_id and initial session info.
-    Client should use session_id for subsequent requests.
+    This endpoint combines session creation and first question generation.
+    Returns session_id and first question with avatar video/audio.
+    
+    Optional request body:
+    {
+        "user_id": "user_123",
+        "start_time": "2026-01-31T19:00:00",
+        "resume_blob": "",
+        "role": "",
+        "company": "",
+        "experience": 0,
+        "job_description": ""
+    }
     """
-    # Create a new session
+    # Create a new internal session
     session = session_manager.create_session()
-    question_service.start_session(session.session_id)
     
-    # Determine avatar mode
-    current_avatar_mode = "video" if avatar_service.is_configured else "audio_only"
+    # Extract request data or use defaults
+    if request_data is None:
+        request_data = {}
+    
+    user_id = request_data.get("user_id", "default_user")
+    start_time = request_data.get("start_time")
+    resume_blob = request_data.get("resume_blob", "")
+    role = request_data.get("role", "")
+    company = request_data.get("company", "")
+    experience = request_data.get("experience", 0)
+    job_description = request_data.get("job_description", "")
+    
+    # Start session with real API
+    try:
+        session_info = await question_service.start_session(
+            session_id=session.session_id,
+            user_id=user_id,
+            start_time=start_time,
+            resume_blob=resume_blob,
+            role=role,
+            company=company,
+            experience=experience,
+            job_description=job_description
+        )
+        logger.info(f"Started interview session: {session.session_id} -> real_session_id={session_info.session_id}")
+    except Exception as e:
+        logger.error(f"Failed to start interview session: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start interview: {str(e)}")
     
     # Update session state
     session_manager.update_session_state(session.session_id, SessionState.IN_PROGRESS)
+    
+    # Get first question from real API
+    question = await question_service.get_next_question(session.session_id)
+    if question is None:
+        raise HTTPException(status_code=500, detail="Failed to get first question")
+    
+    # Update session
+    session_manager.set_current_question(session.session_id, question.id)
+    session_manager.update_session_state(session.session_id, SessionState.WAITING_FOR_ANSWER)
+    
+    # Generate audio immediately (fast - ~1-2 seconds)
+    logger.info(f"Generating audio for question {question.id}")
+    tts_result = await tts_service.generate_speech(question.text)
+    
+    # Get progress
+    current, total = question_service.get_progress(session.session_id)
+    
+    # Get idle video URL
+    idle_video_url = await avatar_service.get_cached_idle_video()
+    
+    # Create generation ID for video polling
+    generation_id = f"gen_{uuid.uuid4().hex[:12]}"
+    
+    # Determine if we should generate video
+    should_generate_video = avatar_service.is_configured
+    current_avatar_mode = "video" if should_generate_video else "audio_only"
+    
+    if should_generate_video:
+        # Store in cache and start background generation
+        video_generation_cache[generation_id] = {
+            "status": "pending",
+            "session_id": session.session_id,
+            "question_id": question.id,
+            "started_at": time.time(),
+            "video_url": None,
+            "error": None,
+        }
+        
+        # Start background video generation
+        background_tasks.add_task(generate_video_background, generation_id, question.text)
+        video_status = "generating"
+    else:
+        video_status = "disabled"
     
     logger.info(f"New HTTP interview session: {session.session_id} (avatar_mode: {current_avatar_mode})")
     
     return {
         "session_id": session.session_id,
         "state": "in_progress",
-        "total_questions": question_service.get_total_questions(),
+        "type": "question",
+        "generation_id": generation_id if should_generate_video else None,
+        "video_status": video_status,
+        "question_id": question.id,
+        "question_text": question.text,
+        "question_type": question.type.value,
         "avatar_mode": current_avatar_mode,
+        "video_url": None,  # Will be available via polling
+        "idle_video_url": idle_video_url,
+        "audio_base64": tts_result.audio_base64,
+        "audio_duration": tts_result.duration,
+        # "word_timings": [
+        #     {"word": wt.word, "start": wt.start, "end": wt.end}
+        #     for wt in tts_result.word_timings
+        # ],
         "avatar_image_url": DID_PRESENTER_IMAGE,
-        "idle_video_url": DID_PRESENTER_IDLE_VIDEO,
+        "current_question": current,
+        "total_questions": total,
     }
 
 
@@ -355,11 +511,20 @@ async def get_next_question_http(session_id: str):
     if question_service.is_interview_complete(session_id):
         return await get_interview_complete_response(session_id)
     
+    # Get next question from real API (async)
+    question = await question_service.get_next_question(session_id)
+    if question is None:
+        return await get_interview_complete_response(session_id)
+    
+    # Update session
+    session_manager.set_current_question(session_id, question.id)
+    session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
+    
     # Get avatar mode
     avatar_mode = AvatarMode.VIDEO if avatar_service.is_configured else AvatarMode.AUDIO_ONLY
     
-    # Generate question response
-    return await generate_question_response(session_id, avatar_mode)
+    # Generate question response (without word_timings for submit answer)
+    return await generate_question_response(session_id, avatar_mode, question=question, include_word_timings=False)
 
 
 @router.post("/interview/{session_id}/answer")
@@ -386,7 +551,13 @@ async def submit_answer_http(session_id: str, answer: dict):
     if question_id is None:
         raise HTTPException(status_code=400, detail="question_id is required")
     
-    # Record the answer
+    # Submit answer to real API
+    success = await question_service.submit_answer(session_id, question_id, answer_text)
+    if not success:
+        logger.warning(f"Failed to submit answer for question {question_id}")
+        raise HTTPException(status_code=500, detail="Failed to submit answer to question service")
+    
+    # Record the answer locally
     session_manager.record_answer(session_id, question_id, answer_text)
     session_manager.update_session_state(session_id, SessionState.PROCESSING)
     
@@ -396,11 +567,20 @@ async def submit_answer_http(session_id: str, answer: dict):
     if question_service.is_interview_complete(session_id):
         return await get_interview_complete_response(session_id)
     
+    # Get next question from real API (async)
+    question = await question_service.get_next_question(session_id, previous_answer=answer_text)
+    if question is None:
+        return await get_interview_complete_response(session_id)
+    
+    # Update session
+    session_manager.set_current_question(session_id, question.id)
+    session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
+    
     # Get avatar mode
     avatar_mode = AvatarMode.VIDEO if avatar_service.is_configured else AvatarMode.AUDIO_ONLY
     
-    # Generate next question response
-    return await generate_question_response(session_id, avatar_mode, previous_answer=answer_text)
+    # Generate next question response (without word_timings)
+    return await generate_question_response(session_id, avatar_mode, question=question, include_word_timings=False)
 
 
 @router.get("/interview/{session_id}/status")
@@ -423,18 +603,32 @@ async def get_session_status(session_id: str):
     }
 
 
-@router.delete("/interview/{session_id}")
-async def end_interview(session_id: str):
-    """End an interview session and cleanup resources."""
+@router.post("/interview/{session_id}")
+async def end_interview(session_id: str, request_data: Optional[dict] = None):
+    """
+    End an interview session and cleanup resources.
+    
+    Optional request body:
+    {
+        "end_time": "2026-01-31T20:00:00"  # ISO 8601 format, defaults to current time
+    }
+    """
     session = session_manager.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # Extract end_time from request or use current time
+    end_time = None
+    if request_data:
+        end_time = request_data.get("end_time")
+    
     # Get summary before cleanup
     summary = session_manager.get_session_summary(session_id)
     
-    # Cleanup
-    question_service.end_session(session_id)
+    # End session with real API (pass end_time)
+    feedback = await question_service.end_session(session_id, end_time=end_time)
+    
+    # Cleanup local session
     session_manager.delete_session(session_id)
     
     logger.info(f"HTTP: Session ended: {session_id}")
@@ -443,6 +637,7 @@ async def end_interview(session_id: str):
         "message": "Session ended successfully",
         "session_id": session_id,
         "summary": summary,
+        "feedback": feedback,  # Include feedback from real API
     }
 
 
@@ -450,17 +645,24 @@ async def generate_question_response(
     session_id: str,
     avatar_mode: AvatarMode,
     previous_answer: Optional[str] = None,
+    question: Optional[InterviewQuestion] = None,
+    include_word_timings: bool = True,
 ) -> dict:
-    """Generate a question response with avatar video or audio."""
-    # Get next question from mock service
-    question = question_service.get_next_question(session_id, previous_answer)
+    """
+    Generate a question response with avatar video or audio.
     
+    Args:
+        include_word_timings: Whether to include word_timings in response (default: True)
+    """
+    # Get next question if not provided
     if question is None:
-        return await get_interview_complete_response(session_id)
-    
-    # Update session
-    session_manager.set_current_question(session_id, question.id)
-    session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
+        question = await question_service.get_next_question(session_id, previous_answer=previous_answer)
+        if question is None:
+            return await get_interview_complete_response(session_id)
+        
+        # Update session
+        session_manager.set_current_question(session_id, question.id)
+        session_manager.update_session_state(session_id, SessionState.WAITING_FOR_ANSWER)
     
     # Generate audio with TTS (for fallback/audio-only mode)
     logger.info(f"HTTP: Generating audio for question {question.id}")
@@ -493,7 +695,7 @@ async def generate_question_response(
     # Use presenter's image for audio-only fallback
     fallback_image = DID_PRESENTER_IMAGE if actual_avatar_mode == AvatarMode.AUDIO_ONLY else None
     
-    return {
+    response = {
         "type": "question",
         "question_id": question.id,
         "question_text": question.text,
@@ -503,15 +705,20 @@ async def generate_question_response(
         "idle_video_url": idle_video_url,
         "audio_base64": tts_result.audio_base64,
         "audio_duration": tts_result.duration,
-        "word_timings": [
-            {"word": wt.word, "start": wt.start, "end": wt.end}
-            for wt in tts_result.word_timings
-        ] if actual_avatar_mode == AvatarMode.AUDIO_ONLY else [],
         "avatar_image_url": fallback_image,
         "current_question": current,
         "total_questions": total,
         "latency_ms": latency_ms,
     }
+    
+    # Only include word_timings if requested
+    if include_word_timings:
+        response["word_timings"] = [
+            {"word": wt.word, "start": wt.start, "end": wt.end}
+            for wt in tts_result.word_timings
+        ] if actual_avatar_mode == AvatarMode.AUDIO_ONLY else []
+    
+    return response
 
 
 async def get_interview_complete_response(session_id: str) -> dict:
