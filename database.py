@@ -81,6 +81,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS resumes (
             id SERIAL PRIMARY KEY,
             user_id TEXT,
+            resume_name TEXT,
             resume_blob BYTEA,
             ats_score INTEGER,
             feedback TEXT,

@@ -306,3 +306,36 @@ def get_home_data(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+
+@router.get("/resume_list/{user_id}")
+def get_resume_list(user_id: str):
+    conn = get_db_connection()
+    cursor = get_db_cursor(conn)
+    
+    try:
+        cursor.execute("""
+            SELECT id, resume_name
+            FROM resumes 
+            WHERE user_id = %s 
+            ORDER BY created_at DESC
+        """, (user_id,))
+        resumes = cursor.fetchall()
+        
+        resume_list = []
+        for resume in resumes:
+            resume_list.append({
+                "id": resume["id"],
+                "resume_name": resume["resume_name"]
+            })
+            
+        return {
+            "success": True,
+            "resumes": resume_list
+        }
+    except Exception as e:
+        print(f"Error fetching resumes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()

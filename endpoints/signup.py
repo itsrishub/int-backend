@@ -15,6 +15,7 @@ class UserSignup(BaseModel):
     primary_role: Optional[str] = None
     year_of_exp: Optional[int] = None
     rank: Optional[int] = None
+    resume_name: Optional[str] = None
     resume: Optional[str] = None  # base64 encoded PDF
 
 
@@ -46,10 +47,10 @@ def create_user(user: UserSignup):
             # Decode base64 to binary
             resume_blob = base64.b64decode(user.resume)
             cursor.execute('''
-                INSERT INTO resumes (user_id, resume_blob)
-                VALUES (%s, %s)
+                INSERT INTO resumes (user_id, resume_name, resume_blob)
+                VALUES (%s, %s, %s)
                 RETURNING id
-            ''', (user_id, resume_blob))
+            ''', (user_id, user.resume_name, resume_blob))
             resume_id = cursor.fetchone()['id']
         
         conn.commit()
