@@ -75,6 +75,11 @@ def analyze_resume(analyze_resume: AnalyzeResume):
             conn.close()
             raise HTTPException(status_code=400, detail="Could not extract text from resume PDF")
     else:
+        resume_blob = analyze_resume.resume_blob
+        if not resume_blob:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Resume blob is required when resume_id is not provided")
+
         import base64
         if isinstance(resume_blob, str):
             resume_blob = resume_blob.encode("utf-8")
