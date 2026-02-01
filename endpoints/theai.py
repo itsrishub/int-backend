@@ -134,7 +134,7 @@ Respond with ONLY the JSON, no additional text."""
                 json.dumps(result.get("weaknesses", [])),
                 json.dumps(result.get("keywords_found", [])),
                 json.dumps(result.get("missing_keywords", [])),
-                resume_id
+                analyze_resume.resume_id
             ))
             conn.commit()
         
