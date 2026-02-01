@@ -106,6 +106,22 @@ class AvatarService:
         self.avatar_image_url = AVATAR_IMAGE_URL  # Fallback for audio-only mode
         self._session: Optional[aiohttp.ClientSession] = None
         self._idle_video_url: Optional[str] = None
+        
+        # Log API key status at startup (without exposing the actual key)
+        if self.api_key:
+            key_length = len(self.api_key)
+            key_format = "username:password" if ':' in self.api_key else "token/base64"
+            logger.info(
+                f"D-ID Avatar Service initialized: "
+                f"API key configured (length: {key_length}, format: {key_format}), "
+                f"Presenter: {self.presenter_id}"
+            )
+        else:
+            logger.warning(
+                "D-ID Avatar Service initialized WITHOUT API key. "
+                "Set DID_API_KEY environment variable to enable video generation. "
+                "Service will fall back to audio-only mode."
+            )
 
     @property
     def is_configured(self) -> bool:
@@ -115,12 +131,27 @@ class AvatarService:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
         if self._session is None or self._session.closed:
+            # D-ID API requires base64 encoded credentials for Basic auth
+            # API key format is typically "username:password" which needs base64 encoding
+            if not self.api_key:
+                logger.error("D-ID API key is not set! Check DID_API_KEY environment variable on Render.")
+                raise ValueError("D-ID API key not configured")
+            
+            # Check if API key is already base64 encoded (contains ':' means it's username:password format)
+            if ':' in self.api_key:
+                # Encode username:password format to base64
+                encoded_key = base64.b64encode(self.api_key.encode('utf-8')).decode('utf-8')
+            else:
+                # Assume it's already base64 encoded or use as-is
+                encoded_key = self.api_key
+            
             self._session = aiohttp.ClientSession(
                 headers={
-                    "Authorization": f"Basic {self.api_key}",
+                    "Authorization": f"Basic {encoded_key}",
                     "Content-Type": "application/json",
                 }
             )
+            logger.debug(f"D-ID API session created (key length: {len(self.api_key)}, encoded: {len(encoded_key)})")
         return self._session
 
     async def close(self):
@@ -284,7 +315,15 @@ class AvatarService:
                     logger.info(f"D-ID clip created: {clip_id}")
                     return clip_id
                 else:
-                    logger.warning(f"D-ID Clips API error: {response.status} - {response_text[:300]}")
+                    # Log detailed error for debugging
+                    error_detail = response_text[:500] if len(response_text) > 0 else "No error message"
+                    api_key_info = f"Key length: {len(self.api_key) if self.api_key else 0}, Key set: {bool(self.api_key)}"
+                    logger.error(
+                        f"D-ID Clips API error: {response.status}\n"
+                        f"Error: {error_detail}\n"
+                        f"API Key status: {api_key_info}\n"
+                        f"If on Render, verify DID_API_KEY environment variable is set correctly in the dashboard."
+                    )
                     return None
         except Exception as e:
             logger.error(f"D-ID Clips API failed: {str(e)}")
@@ -328,7 +367,15 @@ class AvatarService:
                     logger.info(f"D-ID talk created: {talk_id}")
                     return talk_id
                 else:
-                    logger.error(f"D-ID Talks API error: {response.status} - {response_text[:300]}")
+                    # Log detailed error for debugging
+                    error_detail = response_text[:500] if len(response_text) > 0 else "No error message"
+                    api_key_info = f"Key length: {len(self.api_key) if self.api_key else 0}, Key set: {bool(self.api_key)}"
+                    logger.error(
+                        f"D-ID Talks API error: {response.status}\n"
+                        f"Error: {error_detail}\n"
+                        f"API Key status: {api_key_info}\n"
+                        f"If on Render, verify DID_API_KEY environment variable is set correctly in the dashboard."
+                    )
                     return None
         except Exception as e:
             logger.error(f"D-ID Talks API failed: {str(e)}")

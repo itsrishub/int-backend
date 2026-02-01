@@ -100,10 +100,13 @@ async def get_interview_info():
 async def get_avatar_status():
     """Get D-ID avatar service status and remaining credits."""
     if not avatar_service.is_configured:
+        api_key_status = "not set" if not avatar_service.api_key else f"set (length: {len(avatar_service.api_key)})"
         return {
             "configured": False,
             "mode": "audio_only",
             "message": "D-ID API key not configured. Set DID_API_KEY environment variable.",
+            "api_key_status": api_key_status,
+            "hint": "On Render: Go to Environment tab and add DID_API_KEY as a secret variable",
         }
     
     credits_info = await avatar_service.get_credits_info()
@@ -111,6 +114,7 @@ async def get_avatar_status():
         "configured": True,
         "mode": "video",
         "credits": credits_info,
+        "api_key_status": f"configured (length: {len(avatar_service.api_key)})",
     }
 
 
