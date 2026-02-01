@@ -99,6 +99,11 @@ def start_interview_session(session: StartInterviewSession):
             "success": True,
             "message": "Interview session created successfully",
             "session_id": interview_session_id,
+            "role": session.role,
+            "company": session.company,
+            "experience_level": session.experience,
+            "job_description": session.job_description,
+            "interview_type": session.interview_type,
             "status": "active"
         }
     except Exception as e:
