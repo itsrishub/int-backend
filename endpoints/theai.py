@@ -48,6 +48,7 @@ def analyze_resume(analyze_resume: AnalyzeResume):
     cursor = get_db_cursor(conn)
 
     resume_blob = None
+    resume_text = ''
     if analyze_resume.resume_id is not None:
         cursor.execute("SELECT id, resume_blob FROM resumes WHERE id = %s", (analyze_resume.resume_id,))
         resume = cursor.fetchone()
@@ -55,31 +56,50 @@ def analyze_resume(analyze_resume: AnalyzeResume):
             conn.close()
             raise HTTPException(status_code=404, detail="Resume not found for this user")
         resume_blob = resume["resume_blob"]
+        if not resume_blob:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Resume is empty")
+        
+        if isinstance(resume_blob, memoryview):
+            resume_bytes = bytes(resume_blob)
+        else:
+            resume_bytes = resume_blob
+        
+        try:
+            resume_text = extract_text_from_pdf(resume_bytes)
+        except Exception as e:
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+    
+        if not resume_text:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Could not extract text from resume PDF")
     else:
-        cursor.execute("INSERT INTO resumes (user_id, resume_name, resume_blob) VALUES (%s, %s, %s)", (analyze_resume.user_id, analyze_resume.resume_name, analyze_resume.resume_blob))
-        resume_blob = analyze_resume.resume_blob
+        import base64
+        resume_blob = base64.b64decode(analyze_resume.resume_blob)
+        cursor.execute("INSERT INTO resumes (user_id, resume_name, resume_blob) VALUES (%s, %s, %s)", (analyze_resume.user_id, analyze_resume.resume_name, resume_blob))
+        
+        if not resume_blob:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Resume is empty")
+        
+        # if isinstance(resume_blob, memoryview):
+        #     resume_bytes = bytes(resume_blob)
+        # else:
+        #     resume_bytes = resume_blob
+        
+        try:
+            resume_text = extract_text_from_pdf(resume_blob)
+        except Exception as e:
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+    
+        if not resume_text:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Could not extract text from resume PDF")
     
     
-    if not resume_blob:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Resume is empty")
     
-    # Convert memoryview to bytes if needed
-    if isinstance(resume_blob, memoryview):
-        resume_bytes = bytes(resume_blob)
-    else:
-        resume_bytes = resume_blob
-    
-    # Extract text from PDF
-    try:
-        resume_text = extract_text_from_pdf(resume_bytes)
-    except Exception as e:
-        conn.close()
-        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
-    
-    if not resume_text:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Could not extract text from resume PDF")
     
     # Create prompt for ATS analysis with full resume text
     prompt = f"""Analyze this resume and provide an ATS (Applicant Tracking System) score and feedback.
